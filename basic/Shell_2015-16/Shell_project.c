@@ -1,0 +1,346 @@
+/**
+UNIX Shell Project
+
+Sistemas Operativos
+Grados I. Informatica, Computadores & Software
+Dept. Arquitectura de Computadores - UMA
+
+Some code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
+
+To compile and run the program:
+   $ gcc Shell_project.c job_control.c -o Shell
+   $ ./Shell          
+	(then type ^D to exit program)
+
+**/
+
+#include "job_control.h"   // remember to compile with module job_control.c 
+#include <string.h>
+
+#define MAX_LINE 256 /* 256 chars per line, per command, should be enough. */
+
+// -----------------------------------------------------------------------
+//                            MAIN          
+// -----------------------------------------------------------------------
+
+job *lista;	// lista es global porque se utiliza en la RTS de SIGCHLD y main
+
+void my_sigchld(int signum) {	// manejador de SIGCHLD
+	// printf("\nLlego un SIGCHLD\n");
+	block_SIGCHLD();
+	job *actual;
+	int status;
+	int info;
+	int pid_wait;
+	int i;
+	enum status status2;
+
+	for(i = 1; i <= list_size(lista); i++){
+		actual = get_item_bypos(lista, i);
+
+		int pid_wait = waitpid(actual->pgid, &status, WUNTRACED|WNOHANG|WCONTINUED);
+		
+		if(pid_wait == actual->pgid) {
+			// Lo he encontrado
+			status2 = analyze_status(status, &info);
+			print_analyzed_status(status2, info);
+			// printf("Signaled %d \n", info);
+			fflush(stdout);
+			if (status2 == EXITED) {
+				if(info == 255 ) {
+					// asi sale cuando hago kill -18
+					actual -> state = BACKGROUND;
+					// printf("SIGNALED\n");
+					fflush(NULL);
+					continue;
+				} else {
+					// muerte natural
+					delete_job(lista, actual);
+					// printf("EXITED\n");
+					fflush(NULL);
+					i--;
+				}
+			} else if(status2 == SUSPENDED) {
+				actual -> state = STOPPED;
+				// printf("STOPPED");
+				fflush(NULL);
+			/******/
+			} else {
+				// SIGNALED
+				if (info == 19) {
+					actual -> state = STOPPED;
+				} else if(info == 9 || info == 15) {
+					delete_job(lista, actual);
+					i--;
+				}
+				// printf("SIGNALED\n");
+				fflush(NULL);
+			/******/
+			}
+		}
+	}
+	// printf("Señal tratada\n");
+	unblock_SIGCHLD();
+}
+
+int main(void)
+{
+	char inputBuffer[MAX_LINE]; /* buffer to hold the command entered */
+	int background;             /* equals 1 if a command is followed by '&' */
+	char *args[MAX_LINE/2];     /* command line (of 256) has max of 128 arguments */
+	// probably useful variables:
+	int pid_fork, pid_wait; 	/* pid for created and waited process */
+	int status;             	/* status returned by wait */
+	enum status status_res; 	/* status processed by analyze_status() */
+	int info;					/* info processed by analyze_status() */
+
+
+	job *nuevo, *aux;
+	lista = new_list("Jobs list");
+	signal(SIGCHLD, my_sigchld);
+
+	ignore_terminal_signals();
+	
+	/* 
+	 * Incluye:
+	 * Nombre de usuario @ Nombre máquina :/path>
+	 * hola -> print saludo
+	*/
+	char cwd[100];
+	char user[40];
+	getlogin_r(user, 40);
+	char pc[40];
+	gethostname(pc,40);
+	getcwd(cwd, 100);
+
+	// #include <pwd.h>
+	
+	struct passwd *passwordFile;
+	passwordFile = getpwent();
+	char * home;
+	home = (char *)(*passwordFile).pw_dir;
+
+	
+	while (1) {		/* Program terminates normally inside get_command() after ^D is typed*/
+
+		printf/*("<¯\\_(ツ)_/¯>");/*/("%s@%s:%s>", user, pc, cwd);
+		fflush(stdout);
+		get_command(inputBuffer, MAX_LINE, args, &background);  /* get next command */
+		
+		if(args[0]==NULL) continue;   // if empty command
+
+		if (strcmp(args[0], "hola") == 0) {
+			printf("%s\n", "Hello world");
+			continue;
+		}
+		if (strcmp(args[0], "time-out") == 0) {
+			// args[1] tiene los segundos de vida del job
+			// args[2] tiene el comando
+			// args[3-inf] tienen los parametros
+
+
+
+
+			continue;
+		}
+
+
+
+		if (strcmp(args[0], "cd") == 0) {
+			int e;
+			if(args[1])	// path absoluto
+				e = chdir(args[1]);
+			else {		// path por defecto
+				e = chdir(home);
+			}
+			if(e) 
+				printf("Dirección errónea, inexistente o faltan permisos de acceso\n");
+			getcwd(cwd, 100);
+			continue;
+		}
+		if (strcmp(args[0], "jobs") == 0) {
+			print_job_list(lista);
+			continue;
+		}
+		if(strcmp(args[0], "exit") == 0) {
+			if(args[1])
+				exit(atoi(args[1]));
+			exit(0);
+			continue;
+		}
+		if (strcmp(args[0], "fg") == 0) {
+			if(empty_list(lista)) {
+				printf("No existen tareas\n");
+			} else {
+				int pos;
+				if(args[1] != NULL) {
+					printf("FG con argumentos %s \n", args[1]);
+					pos = atoi(args[1]);
+				} else {
+					pos = 1;
+				}
+				// entrega terminal y enciende
+				
+				// --->
+				struct termios conf;	// configuracion antes de lanzar job
+				int shell_terminal; 	// descriptor de fichero del terminal
+				shell_terminal = STDIN_FILENO;
+    			/* leemos la configuracion actual */
+   				tcgetattr(shell_terminal, &conf);
+				// <---
+				
+				block_SIGCHLD();
+				printf("%d\n", pos);
+				job *aux = get_item_bypos(lista, pos);
+				job *aux2 = new_job(aux -> pgid, aux -> command, STOPPED);
+				set_terminal(aux -> pgid);
+				killpg(aux2 -> pgid, SIGCONT);
+				unblock_SIGCHLD();
+				
+				pid_wait = waitpid(aux2 -> pgid, &status, WUNTRACED);
+								
+				block_SIGCHLD();
+				delete_job(lista, aux);
+				unblock_SIGCHLD();
+
+				// pid_wait MUST BE EQUALS TO pid_fork
+				
+				// Le quito el terminal
+				set_terminal(getpid());
+
+				// --->
+				tcsetattr(shell_terminal, TCSANOW, &conf);
+				// <---
+				
+				int status2;
+				status2 = analyze_status(status, &info);
+				printf("Comando %d ejecutado en foreground %s %s: \n", aux2 -> pgid, aux2 -> command, status2?"EXITED":"SUSPENDED");
+				print_analyzed_status(status2, info);
+				
+				if(status2 == SUSPENDED) {
+					// Lo agrego a la lista de jobs
+					block_SIGCHLD();
+					// Evito que me interrumpan
+					add_job(lista, aux2);
+					unblock_SIGCHLD();
+					// libero la lista
+				} else {
+					free(aux2 -> command);
+					free(aux2);
+				}
+			}
+		continue;
+		}
+		if (strcmp(args[0], "bg") == 0) {
+			if(list_size(lista)) {
+				// Tiene elementos
+				if(args[1]) {
+					block_SIGCHLD();
+					job *aux = get_item_bypos(lista, atoi(args[1]));
+					unblock_SIGCHLD();
+					if (aux -> state == BACKGROUND) {
+						printf("Proceso ya en background\n");
+					} else {
+						// está suspendido
+						killpg(aux -> pgid, SIGCONT);
+						aux -> state = BACKGROUND;
+					}
+				} else {
+					// es NULL
+					// recorrer la lista hasta el primero en STOPPED
+
+					// enciende sin entregar terminal
+					block_SIGCHLD();
+					int i = 1, terminar = 1;
+					while((i <= list_size(lista)) && terminar) {
+						job *aux = get_item_bypos(lista, i);
+						if(aux -> state == STOPPED) {
+							killpg(aux -> pgid, SIGCONT);
+							aux -> state = BACKGROUND;
+							terminar = 0;
+						} else 
+							i++;
+					}
+					if(terminar) {
+						printf("No hay tareas suspendidas, todas estan en BACKGROUND\n");
+					}
+					unblock_SIGCHLD();
+				}
+
+			} else {
+				printf("No existen tareas\n");
+			}
+		continue;
+		}
+
+		// comandos externos restore_terminal_signals();
+		pid_fork = fork();
+		if (pid_fork) { 
+			// código del padre
+			// --->
+			struct termios conf;	// configuracion antes de lanzar job
+			int shell_terminal; 	// descriptor de fichero del terminal
+			shell_terminal = STDIN_FILENO;
+    		/* leemos la configuracion actual */
+   			tcgetattr(shell_terminal, &conf);
+			// <---
+			
+			// Nuevo grupo para mi hijo
+			new_process_group(pid_fork);
+			
+			if(background) {
+				// Lo agrego a la lista de jobs
+				printf("Background job running... pid: %d comando: %s \n", pid_fork, args[0]);
+				nuevo = new_job(pid_fork, args[0], BACKGROUND);
+				block_SIGCHLD();
+				// Evito que me interrumpan
+				add_job(lista, nuevo);
+				unblock_SIGCHLD();
+				// libero la lista
+
+			} else {
+				// Le cedo el terminal
+				set_terminal(pid_fork);
+
+				pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+				// pid_wait MUST BE EQUALS TO pid_fork
+				
+				// Le quito el terminal
+				set_terminal(getpid());
+
+				int status2;
+				status2 = analyze_status(status, &info);
+				printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[0], status2?"EXITED":"SUSPENDED");
+				print_analyzed_status(status2, info);
+
+				if(status2 == SUSPENDED) {
+					// Lo agrego a la lista de jobs
+					nuevo = new_job(pid_fork, args[0], STOPPED);
+					block_SIGCHLD();
+					// Evito que me interrumpan
+					add_job(lista, nuevo);
+					unblock_SIGCHLD();
+					// libero la lista
+				}
+			}
+			// --->
+			tcsetattr(shell_terminal, TCSANOW, &conf);
+			// <---
+			continue;
+		} else if(pid_fork < 0) {
+			printf("Error al crear el proceso (memoria insuficiente, límite de procesos, etc...)\n");
+			exit(EXIT_FAILURE);
+		
+		} else { // hijo
+			// Redundante para garantizar su ejecucion
+			new_process_group(getpid());
+			if(!background) {
+				set_terminal(getpid());
+			}
+			restore_terminal_signals();
+			execvp(args[0], args);
+			printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+			exit(EXIT_FAILURE);
+		}
+	} // end while
+}
