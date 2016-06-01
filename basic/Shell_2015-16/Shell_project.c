@@ -83,6 +83,14 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 	unblock_SIGCHLD();
 }
 
+static void* killer(void *arg)
+{
+  elem *payload = arg;
+
+  sleep(payload->time);
+  killpg(payload->pgid,SIGTERM);	// envio TERM al grupo timed-out-ed!
+}
+
 int main(void)
 {
 	char inputBuffer[MAX_LINE]; /* buffer to hold the command entered */
@@ -137,6 +145,91 @@ int main(void)
 			// args[1] tiene los segundos de vida del job
 			// args[2] tiene el comando
 			// args[3-inf] tienen los parametros
+
+
+			pid_fork = fork();
+			if (pid_fork) { 
+				pthread_t thid;
+				elem *theOne;		// usa esto o el elemento de la lista de procesos
+				int pgid = pid_fork;
+				int when = atoi(args[1]);
+				// Incluir info del temporizador en la estructura de tipo elem
+				theOne = (elem *)malloc(sizeof(elem));
+				theOne->pgid = pgid; // a quien vamos a matar
+				theOne->time = when; // y cuando lo vamos a hacer
+				// abre el thread detached (para no hace join)
+				if (0 == pthread_create(&thid,NULL,killer,(void *)theOne))
+					pthread_detach(thid);
+				else
+					fprintf(stderr,"time-out fallido\n");
+				// código del padre
+				// --->
+				struct termios conf;	// configuracion antes de lanzar job
+				int shell_terminal; 	// descriptor de fichero del terminal
+				shell_terminal = STDIN_FILENO;
+	    		/* leemos la configuracion actual */
+	   			tcgetattr(shell_terminal, &conf);
+				// <---
+				
+				// Nuevo grupo para mi hijo
+				new_process_group(pid_fork);
+				
+				if(background) {
+					// Lo agrego a la lista de jobs
+					printf("Background job running... pid: %d comando: %s \n", pid_fork, args[2]);
+					nuevo = new_job(pid_fork, args[2], BACKGROUND);
+					block_SIGCHLD();
+					// Evito que me interrumpan
+					add_job(lista, nuevo);
+					unblock_SIGCHLD();
+					// libero la lista
+
+				} else {
+					// Le cedo el terminal
+					set_terminal(pid_fork);
+
+					pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+					// pid_wait MUST BE EQUALS TO pid_fork
+					
+					// Le quito el terminal
+					set_terminal(getpid());
+
+					int status2;
+					status2 = analyze_status(status, &info);
+					printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[2], status2?"EXITED":"SUSPENDED");
+					print_analyzed_status(status2, info);
+
+					if(status2 == SUSPENDED) {
+						// Lo agrego a la lista de jobs
+						nuevo = new_job(pid_fork, args[2], STOPPED);
+						block_SIGCHLD();
+						// Evito que me interrumpan
+						add_job(lista, nuevo);
+						unblock_SIGCHLD();
+						// libero la lista
+					}
+				}
+				// --->
+				tcsetattr(shell_terminal, TCSANOW, &conf);
+				// <---
+			} else if(pid_fork < 0) {
+				printf("Error al crear el proceso (memoria insuficiente, límite de procesos, etc...)\n");
+				exit(EXIT_FAILURE);
+			
+			} else { // hijo
+				// Redundante para garantizar su ejecucion
+				new_process_group(getpid());
+				if(!background) {
+					set_terminal(getpid());
+				}
+				restore_terminal_signals();
+				char** argumentosHijo = &args[2];
+				execvp(*argumentosHijo, argumentosHijo);
+				printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+				exit(EXIT_FAILURE);
+			}
+
+
 
 
 

@@ -20,7 +20,24 @@ Some code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <pwd.h>
+#include <time.h>
+#include <errno.h>
 
+
+// ----------------------------------------------------------------------
+
+#define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE); } while (0)
+
+typedef struct {
+  pid_t   pgid;
+	// datos adicionales para sleep()
+  int time;
+} elem;	// o bien, poner el puntero al timer en la lista de procesos
+
+
+// el manejador, encargado de matar al grupo de procesos indicado
+static void* killer(void *arg);
+// ----------------------------------------------------------------------
 // ----------- ENUMERATIONS ---------------------------------------------
 enum status { SUSPENDED, SIGNALED, EXITED};			// GENERA SIGCHILD
 enum job_state { FOREGROUND, BACKGROUND, STOPPED };
