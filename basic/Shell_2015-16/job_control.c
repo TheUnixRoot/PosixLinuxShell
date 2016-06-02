@@ -21,7 +21,7 @@ Some code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
 //  null-terminated string.
 // -----------------------------------------------------------------------
 
-void get_command(char inputBuffer[], int size, char *args[],int *background)
+void get_command(char inputBuffer[], int size, char *args[],int *background, int *respawnable)
 {
 	int length, /* # of characters in the command line */
 		i,      /* loop index for accessing inputBuffer array */
@@ -29,7 +29,8 @@ void get_command(char inputBuffer[], int size, char *args[],int *background)
 		ct;     /* index of where to place the next parameter into args[] */
 
 	ct = 0;
-	*background=0;
+	*background = 0;
+	*respawnable = 0;
 
 	/* read what the user enters on the command line */
 	length = read(STDIN_FILENO, inputBuffer, size);  
@@ -85,8 +86,19 @@ void get_command(char inputBuffer[], int size, char *args[],int *background)
 				args[ct] = NULL; /* no more arguments to this command */
 				i=length; // make sure the for loop ends now
 
+			} else if (inputBuffer[i] == '#') {
+				*respawnable  = 1;
+				if (start != -1)
+				{
+					args[ct] = &inputBuffer[start];     
+					ct++;
+				}
+				inputBuffer[i] = '\0';
+				args[ct] = NULL; /* no more arguments to this command */
+				i=length; // make sure the for loop ends now					
+			} else if (start == -1) {
+				start = i;  // start of new argument
 			}
-			else if (start == -1) start = i;  // start of new argument
 		}  // end switch
 	}  // end for   
 	args[ct] = NULL; /* just in case the input line was > MAXLINE */
@@ -96,7 +108,7 @@ void get_command(char inputBuffer[], int size, char *args[],int *background)
 // -----------------------------------------------------------------------
 /* devuelve puntero a un nodo con sus valores inicializados,
 devuelve NULL si no pudo realizarse la reserva de memoria*/
-job * new_job(pid_t pid, const char * command, enum job_state state)
+job * new_job(pid_t pid, const char * command, enum job_state state, char *args[])
 {
 	job * aux;
 	aux=(job *) malloc(sizeof(job));
@@ -104,6 +116,7 @@ job * new_job(pid_t pid, const char * command, enum job_state state)
 	aux->state=state;
 	aux->command=strdup(command);
 	aux->next=NULL;
+	aux->args = args;
 	return aux;
 }
 
@@ -128,7 +141,8 @@ int delete_job(job * list, job * item)
 	if(aux->next)
 	{
 		aux->next=item->next;
-		free(item->command);
+		free(item -> command);
+		free(item -> args);
 		free(item);
 		list->pgid--;
 		return 1;
@@ -184,18 +198,21 @@ void print_list(job * list, void (*print)(job *))
 /* interpretar valor estatus que devuelve wait */
 enum status analyze_status(int status, int *info)
 {
-	if (WIFSTOPPED (status))
-	{
+	if (WIFSTOPPED (status)) {
 		*info=WSTOPSIG(status);
 		return(SUSPENDED);
-	}
-	else
-	{
+	} else if(WIFCONTINUED (status)) {
+		*info=-1;
+		return(CONTINUED);
+	} else {
 		// el proceso termio
-		if (WIFSIGNALED (status))
-		{ *info=WTERMSIG (status); return(SIGNALED);}
-		else
-		{ *info=WEXITSTATUS(status); return(EXITED);}
+		if (WIFSIGNALED (status)) { 
+			*info=WTERMSIG (status);
+			return(SIGNALED);
+		} else { 
+			*info=WEXITSTATUS(status); 
+			return(EXITED);
+		}
 	}
 	return;
 }

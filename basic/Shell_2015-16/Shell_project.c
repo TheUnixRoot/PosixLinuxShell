@@ -44,25 +44,44 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 			// Lo he encontrado
 			status2 = analyze_status(status, &info);
 			print_analyzed_status(status2, info);
-			// printf("Signaled %d \n", info);
+			printf("Signaled %d \n", info);
 			fflush(stdout);
 			if (status2 == EXITED) {
-				if(info == 255 ) {
-					// asi sale cuando hago kill -18
-					actual -> state = BACKGROUND;
-					// printf("SIGNALED\n");
-					fflush(NULL);
-					continue;
-				} else {
+				if(actual -> state != RESPAWNABLE) {
 					// muerte natural
 					delete_job(lista, actual);
-					// printf("EXITED\n");
+					printf("EXITED\n");
 					fflush(NULL);
 					i--;
+				} else {
+					char **temp = actual -> args;
+					pid_t pid_fork = fork();
+					if (pid_fork) { 
+						// código del padre
+						set_terminal(getpid());
+						// lo meto en el grupo viejo??
+						setpgid(pid_fork, actual -> pgid);		// VA DE LUJO, PERO NO SE POR QUÉ
+						// Lo agrego a la lista de jobs
+						actual -> pgid = pid_fork;
+					} else { // hijo
+						// Redundante para garantizar su ejecucion
+						new_process_group(getpid());
+						restore_terminal_signals();
+						execvp(temp[0], temp);
+						printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+						exit(EXIT_FAILURE);
+					}
+					printf("RESPAWNED\n");
+					fflush(NULL);
 				}
+			} else if(status2 == CONTINUED){
+				// asi sale cuando hago kill -18
+				actual -> state = BACKGROUND;
+				printf("CONTINUED\n");
+				fflush(NULL);
 			} else if(status2 == SUSPENDED) {
 				actual -> state = STOPPED;
-				// printf("STOPPED");
+				printf("STOPPED");
 				fflush(NULL);
 			/******/
 			} else {
@@ -73,13 +92,14 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 					delete_job(lista, actual);
 					i--;
 				}
-				// printf("SIGNALED\n");
+				printf("SIGNALED\n");
 				fflush(NULL);
 			/******/
 			}
 		}
 	}
-	// printf("Señal tratada\n");
+	printf("Señal tratada\n");
+	fflush(NULL);
 	unblock_SIGCHLD();
 }
 
@@ -102,6 +122,8 @@ int main(void)
 	enum status status_res; 	/* status processed by analyze_status() */
 	int info;					/* info processed by analyze_status() */
 
+	int respawnable;
+
 
 	job *nuevo, *aux;
 	lista = new_list("Jobs list");
@@ -121,19 +143,14 @@ int main(void)
 	gethostname(pc,40);
 	getcwd(cwd, 100);
 
-	// #include <pwd.h>
-	
-	struct passwd *passwordFile;
-	passwordFile = getpwent();
-	char * home;
-	home = (char *)(*passwordFile).pw_dir;
-
+	char * home = getenv("HOME");
+	printf("%s\n", home);
 	
 	while (1) {		/* Program terminates normally inside get_command() after ^D is typed*/
 
 		printf/*("<¯\\_(ツ)_/¯>");/*/("%s@%s:%s>", user, pc, cwd);
 		fflush(stdout);
-		get_command(inputBuffer, MAX_LINE, args, &background);  /* get next command */
+		get_command(inputBuffer, MAX_LINE, args, &background, &respawnable);  /* get next command */
 		
 		if(args[0]==NULL) continue;   // if empty command
 
@@ -173,11 +190,12 @@ int main(void)
 				
 				// Nuevo grupo para mi hijo
 				new_process_group(pid_fork);
-				
+				char** argumentosHijo = &args[2];
+					
 				if(background) {
 					// Lo agrego a la lista de jobs
-					printf("Background job running... pid: %d comando: %s \n", pid_fork, args[2]);
-					nuevo = new_job(pid_fork, args[2], BACKGROUND);
+					printf("Background job running... pid: %d comando: %s \n", pid_fork, argumentosHijo[0]);
+					nuevo = new_job(pid_fork, argumentosHijo[0], BACKGROUND, argumentosHijo);
 					block_SIGCHLD();
 					// Evito que me interrumpan
 					add_job(lista, nuevo);
@@ -193,15 +211,14 @@ int main(void)
 					
 					// Le quito el terminal
 					set_terminal(getpid());
-
 					int status2;
 					status2 = analyze_status(status, &info);
-					printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[2], status2?"EXITED":"SUSPENDED");
+					printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, argumentosHijo[0], status2?"EXITED":"SUSPENDED");
 					print_analyzed_status(status2, info);
 
 					if(status2 == SUSPENDED) {
 						// Lo agrego a la lista de jobs
-						nuevo = new_job(pid_fork, args[2], STOPPED);
+						nuevo = new_job(pid_fork, argumentosHijo[0], STOPPED, argumentosHijo);
 						block_SIGCHLD();
 						// Evito que me interrumpan
 						add_job(lista, nuevo);
@@ -228,17 +245,8 @@ int main(void)
 				printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
 				exit(EXIT_FAILURE);
 			}
-
-
-
-
-
-
 			continue;
 		}
-
-
-
 		if (strcmp(args[0], "cd") == 0) {
 			int e;
 			if(args[1])	// path absoluto
@@ -282,13 +290,11 @@ int main(void)
    				tcgetattr(shell_terminal, &conf);
 				// <---
 				
-				block_SIGCHLD();
-				printf("%d\n", pos);
+				// printf("%d\n", pos);
 				job *aux = get_item_bypos(lista, pos);
-				job *aux2 = new_job(aux -> pgid, aux -> command, STOPPED);
+				job *aux2 = new_job(aux -> pgid, aux -> command, STOPPED, aux -> args);
 				set_terminal(aux -> pgid);
 				killpg(aux2 -> pgid, SIGCONT);
-				unblock_SIGCHLD();
 				
 				pid_wait = waitpid(aux2 -> pgid, &status, WUNTRACED);
 								
@@ -384,7 +390,17 @@ int main(void)
 			if(background) {
 				// Lo agrego a la lista de jobs
 				printf("Background job running... pid: %d comando: %s \n", pid_fork, args[0]);
-				nuevo = new_job(pid_fork, args[0], BACKGROUND);
+				nuevo = new_job(pid_fork, args[0], BACKGROUND, args);
+				block_SIGCHLD();
+				// Evito que me interrumpan
+				add_job(lista, nuevo);
+				unblock_SIGCHLD();
+				// libero la lista
+
+			} else if (respawnable) {
+				// Lo agrego a la lista de jobs
+				printf("Respawnable job running at background... pid: %d comando: %s \n", pid_fork, args[0]);
+				nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args);
 				block_SIGCHLD();
 				// Evito que me interrumpan
 				add_job(lista, nuevo);
@@ -408,7 +424,7 @@ int main(void)
 
 				if(status2 == SUSPENDED) {
 					// Lo agrego a la lista de jobs
-					nuevo = new_job(pid_fork, args[0], STOPPED);
+					nuevo = new_job(pid_fork, args[0], STOPPED, args);
 					block_SIGCHLD();
 					// Evito que me interrumpan
 					add_job(lista, nuevo);
