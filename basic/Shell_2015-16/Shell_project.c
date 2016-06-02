@@ -76,13 +76,25 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 				}
 			} else if(status2 == CONTINUED){
 				// asi sale cuando hago kill -18
-				actual -> state = BACKGROUND;
-				printf("CONTINUED\n");
-				fflush(NULL);
+				if(actual -> state != RESPAWNABLE) {
+					actual -> state = BACKGROUND;
+					printf("CONTINUED\n");
+					fflush(NULL);
+				} 
 			} else if(status2 == SUSPENDED) {
-				actual -> state = STOPPED;
-				printf("STOPPED");
-				fflush(NULL);
+				if(actual -> state != RESPAWNABLE) {
+					actual -> state = STOPPED;
+					printf("STOPPED");
+					fflush(NULL);
+				} else {
+					killpg(actual -> pgid, SIGCONT);
+					printf("RESPAWNED\n");
+					fflush(NULL);
+				}
+
+
+
+
 			/******/
 			} else {
 				// SIGNALED
