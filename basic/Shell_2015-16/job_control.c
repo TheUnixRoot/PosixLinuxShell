@@ -137,12 +137,13 @@ devuelve 0 si no pudo realizarse con exito */
 int delete_job(job * list, job * item)
 {
 	job * aux=list;
-	while(aux->next!= NULL && aux->next!= item) aux=aux->next;
-	if(aux->next)
-	{
-		aux->next=item->next;
+	while(aux -> next != NULL && aux -> next != item) {
+		aux=aux->next;
+	}
+	if(aux -> next) { // aux -> next == item
+		aux -> next = item -> next;
 		free(item -> command);
-		free(item -> args);
+		// free del char **args;
 		free(item);
 		list->pgid--;
 		return 1;

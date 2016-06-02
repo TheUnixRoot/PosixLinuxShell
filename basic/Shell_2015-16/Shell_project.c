@@ -291,16 +291,16 @@ int main(void)
 				// <---
 				
 				// printf("%d\n", pos);
-				job *aux = get_item_bypos(lista, pos);
-				job *aux2 = new_job(aux -> pgid, aux -> command, STOPPED, aux -> args);
-				set_terminal(aux -> pgid);
-				killpg(aux2 -> pgid, SIGCONT);
-				
-				pid_wait = waitpid(aux2 -> pgid, &status, WUNTRACED);
-								
 				block_SIGCHLD();
-				delete_job(lista, aux);
+				job *aux = get_item_bypos(lista, pos);
 				unblock_SIGCHLD();
+
+				set_terminal(aux -> pgid);
+				killpg(aux -> pgid, SIGCONT);
+				
+				pid_wait = waitpid(aux -> pgid, &status, WUNTRACED);
+								
+				
 
 				// pid_wait MUST BE EQUALS TO pid_fork
 				
@@ -313,19 +313,20 @@ int main(void)
 				
 				int status2;
 				status2 = analyze_status(status, &info);
-				printf("Comando %d ejecutado en foreground %s %s: \n", aux2 -> pgid, aux2 -> command, status2?"EXITED":"SUSPENDED");
+				printf("Comando %d ejecutado en foreground %s %s: \n", aux -> pgid, aux -> command, status2?"EXITED":"SUSPENDED");
 				print_analyzed_status(status2, info);
 				
 				if(status2 == SUSPENDED) {
 					// Lo agrego a la lista de jobs
 					block_SIGCHLD();
 					// Evito que me interrumpan
-					add_job(lista, aux2);
+					aux -> state = STOPPED;
 					unblock_SIGCHLD();
 					// libero la lista
 				} else {
-					free(aux2 -> command);
-					free(aux2);
+					block_SIGCHLD();
+					delete_job(lista, aux);
+					unblock_SIGCHLD();
 				}
 			}
 		continue;
