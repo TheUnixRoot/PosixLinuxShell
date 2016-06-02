@@ -21,7 +21,7 @@ Some code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
 //  null-terminated string.
 // -----------------------------------------------------------------------
 
-void get_command(char inputBuffer[], int size, char *args[],int *background, int *respawnable)
+void get_command(char inputBuffer[], int size, char *args[],int *background, int *respawnable, history *historial)
 {
 	int length, /* # of characters in the command line */
 		i,      /* loop index for accessing inputBuffer array */
@@ -34,7 +34,13 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 
 	/* read what the user enters on the command line */
 	length = read(STDIN_FILENO, inputBuffer, size);  
-
+	
+	// making strings from input buffer and adding to history
+	char linea[257];
+	strncpy(linea, inputBuffer, length);
+	strcat(linea, "\0");
+	addToHistory(historial, linea);
+	
 	start = -1;
 	if (length == 0)
 	{
@@ -257,3 +263,67 @@ void print_analyzed_status(int status, int info) {
 		printf("Proceso finalizado con codigo: %d\n", info);
 	}
 }
+
+// -------------- FUNCTIONS TO MANAGE HISTORY ----------------------------
+
+void addToHistory(history *lista, char *linea) {
+
+	history new = (history) malloc(sizeof(struct history_));
+	new -> prev = *lista;
+	new -> line = (char*)malloc(sizeof(char)*256);
+	strcpy(new -> line, linea);
+	*lista = new;
+
+}
+
+void clearHistory(history *lista) {
+	history aux = NULL;
+	while( (*lista) != NULL) {
+		aux = *lista;
+		*lista = (*lista) -> prev;
+		free(aux -> line);
+		free(aux);
+	}
+	// *linea is NULL
+}
+
+char* getIelem(history lista, int index) {
+	int i = 0;
+	while(i < index && lista != NULL) {
+		lista = lista -> prev;
+		i++;
+	}
+	if(lista) {
+		//is not null, I have Ielem
+		return lista -> line;
+	} else {
+		return NULL;
+	}
+}
+
+void showHistory(history lista) {
+	int i = 0;
+	while(lista != NULL) {
+		printf("%d: %s\n", i++, lista -> line);
+		lista = lista -> prev;
+	}
+}
+
+void removeIelem(history *lista, int index) {
+	int i = 0;
+	history it = *lista;
+	history aux = NULL;
+	while (it != NULL && i < index) {
+		aux = it;
+		it = it -> prev;
+		i++;
+	}
+	if(it) {
+		// is not NULL
+		aux -> prev = it -> prev;
+		free(it -> line);
+		free(it);
+	}
+}
+
+// -----------------------------------------------------------------------

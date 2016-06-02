@@ -135,7 +135,7 @@ int main(void)
 	int info;					/* info processed by analyze_status() */
 
 	int respawnable;
-
+	history historial = NULL;
 
 	job *nuevo, *aux;
 	lista = new_list("Jobs list");
@@ -162,12 +162,32 @@ int main(void)
 
 		printf/*("<¯\\_(ツ)_/¯>");/*/("%s@%s:%s>", user, pc, cwd);
 		fflush(stdout);
-		get_command(inputBuffer, MAX_LINE, args, &background, &respawnable);  /* get next command */
+		get_command(inputBuffer, MAX_LINE, args, &background, &respawnable, &historial);  /* get next command */
 		
 		if(args[0]==NULL) continue;   // if empty command
 
 		if (strcmp(args[0], "hola") == 0) {
 			printf("%s\n", "Hello world");
+			continue;
+		}
+		if (strcmp(args[0], "history") == 0) {
+			if(args[1]) {
+				// quiere una operación en concreto
+				if(strcmp(args[1], "-r") == 0) {	// -r i remove
+					removeIelem(&historial, atoi(args[2]));
+
+				} else if (strcmp(args[1], "-c") == 0) {	// -c clear
+					clearHistory(&historial);
+
+				} else {	// show i
+					int i = atoi(args[1]);
+					printf("elemento %d: %s\n", atoi(args[1]), getIelem(historial, i));
+				}
+
+			} else {
+				// quiere todo
+				showHistory(historial);
+			}
 			continue;
 		}
 		if (strcmp(args[0], "time-out") == 0) {
