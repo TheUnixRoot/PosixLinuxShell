@@ -5,12 +5,13 @@ Sistemas Operativos
 Grados I. Informatica, Computadores & Software
 Dept. Arquitectura de Computadores - UMA
 
-Some code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
+Some (very few) code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
 
 To compile and run the program:
-   $ gcc Shell_project.c job_control.c -o Shell
-   $ ./Shell          
-	(then type ^D to exit program)
+   $ gcc Shell_project.c job_control.c -o shell -pthread
+   $ ./shell          
+	(then type ^D to exit program, also writting exit)
+
 
 **/
 
@@ -466,7 +467,7 @@ int main(void)
 					unblock_SIGCHLD();
 				}
 			}
-		continue;
+			continue;
 		}
 		if (strcmp(args[0], "bg") == 0) {
 			if(list_size(lista)) {
@@ -492,7 +493,7 @@ int main(void)
 					int i = 1, terminar = 1;
 					while((i <= list_size(lista)) && terminar) {
 						job *aux = get_item_bypos(lista, i);
-						if(aux -> state == STOPPED || aux -> state ==) {
+						if(aux -> state == STOPPED || aux -> state == RESPAWNABLE) {
 							killpg(aux -> pgid, SIGCONT);
 							aux -> state = BACKGROUND;
 							terminar = 0;
@@ -508,7 +509,7 @@ int main(void)
 			} else {
 				printf("No existen tareas\n");
 			}
-		continue;
+			continue;
 		}
 
 		// comandos externos restore_terminal_signals();
@@ -590,6 +591,5 @@ int main(void)
 			printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
 			exit(EXIT_FAILURE);
 		}
-	
 	} // end while
 }
