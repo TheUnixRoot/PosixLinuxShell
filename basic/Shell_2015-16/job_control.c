@@ -347,7 +347,7 @@ history getIelem(history lista, int index) {
 void showHistory(history lista) {
 	int i = 0;
 	while(lista != NULL) {
-		printf("%d: %s %s\n", i++, lista -> args[0], lista -> args[1]);
+		printf("%d: %s\n", i++, lista -> args[0]);
 		lista = lista -> prev;
 	}
 }

@@ -36,11 +36,12 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 	enum status status2;
 
 	for(i = 1; i <= list_size(lista); i++){
+		// itero por toda la lista de jobs preguntando que les ha 
+		// pasado a los procesos miembros
 		actual = get_item_bypos(lista, i);
-
 		int pid_wait = waitpid(actual->pgid, &status, WUNTRACED|WNOHANG|WCONTINUED);
-		
 		if(pid_wait == actual->pgid) {
+			// Este proceso ha recibido una señal
 			// Lo he encontrado
 			status2 = analyze_status(status, &info);
 			print_analyzed_status(status2, info);
@@ -48,24 +49,33 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 			fflush(stdout);
 			if (status2 == EXITED) {
 				if(actual -> state != RESPAWNABLE) {
-					// muerte natural
+					// el proceso ha finalizado y no es respawnable
 					delete_job(lista, actual);
 					printf("EXITED\n");
 					fflush(NULL);
 					i--;
 				} else {
-					// la tarea es respawnable
+					// la tarea que ha acabado es respawnable
 					char **temp = actual -> args;
 					pid_t pid_fork = fork();
 					if (pid_fork) { 
 						// código del padre
-						// lo meto en el grupo viejo??
-						setpgid(pid_fork, actual -> pgid);		// VA DE LUJO, PERO NO SE POR QUÉ
+
+
+						// Nuevo grupo para mi hijo
+						new_process_group(pid_fork);
+			
+
 						// Lo agrego a la lista de jobs
 						actual -> pgid = pid_fork;
-					} else { // hijo
+					} else { 
+						// hijo
 						// Redundante para garantizar su ejecucion
+						
+						// creo un nuevo grupo?
 						new_process_group(getpid());
+						
+
 						restore_terminal_signals();
 						execvp(temp[0], temp);
 						printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
@@ -77,17 +87,22 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 			} else if(status2 == CONTINUED){
 				// asi sale cuando hago kill -18
 				if(actual -> state != RESPAWNABLE) {
+					// El proceso no es respawnable, 
 					actual -> state = BACKGROUND;
 					printf("CONTINUED\n");
 					fflush(NULL);
 				} 
+				// si fuese respawnable, sigue igual, 
+				// así que no haría nada
 			} else if(status2 == SUSPENDED) {
 				if(actual -> state != RESPAWNABLE) {
+					// cambio el estado de la tarea a stopped
 					actual -> state = STOPPED;
 					printf("STOPPED");
 					fflush(NULL);
 				} else {
-					// la tarea suspendida es respawnable
+					// la tarea suspendida es respawnable, 
+					// la relanzo
 					killpg(actual -> pgid, SIGCONT);
 					printf("RESPAWNED\n");
 					fflush(NULL);
@@ -99,11 +114,46 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 			/******/
 			} else {
 				// SIGNALED
-				if (info == 19) {
-					actual -> state = STOPPED;
-				} else if(info == 9 || info == 15) {
-					delete_job(lista, actual);
-					i--;
+				if(actual -> state != RESPAWNABLE) {
+					if (info == 19) {
+						actual -> state = STOPPED;
+					} else if(info == 9 || info == 15) {
+
+						delete_job(lista, actual);
+						i--;
+					}
+				} else {
+					if (info == 19) {
+						// la tarea suspendida es respawnable, 
+						// la relanzo
+						killpg(actual -> pgid, SIGCONT);
+						printf("RESPAWNED\n");
+						fflush(NULL);
+					} else if(info == 9 || info == 15) {
+						// la tarea que ha acabado es respawnable
+						char **temp = actual -> args;
+						pid_t pid_fork = fork();
+						if (pid_fork) { 
+							// código del padre
+							// Nuevo grupo para mi hijo
+							new_process_group(pid_fork);
+			
+
+							// Lo agrego a la lista de jobs
+							actual -> pgid = pid_fork;
+						} else { 
+							// hijo
+							// Redundante para garantizar su ejecucion
+							// creo un nuevo grupo
+							new_process_group(getpid());
+							
+
+							restore_terminal_signals();
+							execvp(temp[0], temp);
+							printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+							exit(EXIT_FAILURE);
+						}
+					}
 				}
 				printf("SIGNALED\n");
 				fflush(NULL);
@@ -116,6 +166,7 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 	unblock_SIGCHLD();
 }
 
+/*----------------------Procedimiento para el thread time-out----------------------------------*/
 static void* killer(void *arg)
 {
   elem *payload = arg;
@@ -123,6 +174,7 @@ static void* killer(void *arg)
   sleep(payload->time);
   killpg(payload->pgid,SIGTERM);	// envio TERM al grupo timed-out-ed!
 }
+/*----------------------------------------------------------------------------------------------*/
 
 int main(void)
 {
@@ -135,10 +187,8 @@ int main(void)
 	enum status status_res; 	/* status processed by analyze_status() */
 	int info;					/* info processed by analyze_status() */
 
-	int respawnable;
-	history historial = NULL;
-
-	char **argumentosHistorial = NULL;
+	int respawnable;			/* Variable para controlar procesos lanzados en modo respawnable */
+	history historial = NULL;	/* Lista que controla el historial de comando ejecutados en la sesion */
 
 	job *nuevo, *aux;
 	lista = new_list("Jobs list");
@@ -160,22 +210,38 @@ int main(void)
 
 	char * oldpwd = getenv("OLDPWD");
 	char * home = getenv("HOME");
-	
+	/* Variables iniciales del entorno, utilizadas para el comando interno cd */
+
+
 	while (1) {		/* Program terminates normally inside get_command() after ^D is typed*/
 
-		printf/*("<¯\\_(ツ)_/¯>");/*/("%s@%s:%s>", user, pc, cwd);
+		printf("%s@%s:%s>", user, pc, cwd);	
+		/* Impresion de entrada de comandos, muestra el usuario, el nombre del host y el directorio actual */
 		fflush(stdout);
+		
 		get_command(inputBuffer, MAX_LINE, args, &background, &respawnable, &historial);  /* get next command */
-		argumentosHistorial = NULL;
+		
 		if(args[0]==NULL) continue;   // if empty command
 
 		if (strcmp(args[0], "history") == 0) {
+			// comprueba y ejecuta el comando interno history
+			// sin argumentos, muestra el histórico de comandos de la sesion
+			// acepta argumentos:
+			// -clear para limpiar el historial
+			// -remove i para eliminar una entrada concreta
 			if(args[1]) {
 				// quiere una operación en concreto
-				if(strcmp(args[1], "-remove") == 0) {	// -r i remove
-					removeIelem(&historial, atoi(args[2]));
-					continue;
-				} else if (strcmp(args[1], "-clear") == 0) {	// -c clear
+				if(strcmp(args[1], "-remove") == 0) {	// -remove i
+					int i = 0;
+					if(args[2]) {
+						i = atoi(args[2]);
+						removeIelem(&historial, i);
+						continue;
+					} else {
+						printf("Error, elemento no introducido al eliminar entrada del historial\n");
+					}
+				} else if (strcmp(args[1], "-clear") == 0) {	
+					// -clear
 					clearHistory(&historial);
 					continue;
 				} else {	// execute i
@@ -193,14 +259,13 @@ int main(void)
 					background = linea -> background;
 					respawnable = linea -> respawnable;
 					
-// copiar argumentos strdup()
-
-
 					printf("%s \n", args[0]);
 				}
-
+				// no hay continue porque así al modificar args, ejecuto el comando
+				// deseado del historial 
 			} else {
-				// quiere todo
+				// history sin argumentos, por defecto
+				// muestra todo el historico
 				showHistory(historial);
 				continue;
 			}
@@ -211,6 +276,10 @@ int main(void)
 			continue;
 		}
 		if (strcmp(args[0], "time-out") == 0) {
+			// comando interno para lanzar una tarea en modo time-out
+			// no controla el lanzamiento de una tarea respawnable en time-out
+			// debido a la naturaleza del respawnable, es absurdo, con lo que el 
+			// time-out prevalece, eliminando la cualidad respawnable
 			// args[1] tiene los segundos de vida del job
 			// args[2] tiene el comando
 			// args[3-inf] tienen los parametros
@@ -219,7 +288,7 @@ int main(void)
 			pid_fork = fork();
 			if (pid_fork) { 
 				pthread_t thid;
-				elem *theOne;		// usa esto o el elemento de la lista de procesos
+				elem *theOne;		// usa el elemento de la lista de procesos
 				int pgid = pid_fork;
 				int when = atoi(args[1]);
 				// Incluir info del temporizador en la estructura de tipo elem
@@ -244,7 +313,7 @@ int main(void)
 				new_process_group(pid_fork);
 				char** argumentosHijo = &args[2];
 					
-				if(background) {
+				if(background || respawnable) {
 					// Lo agrego a la lista de jobs
 					printf("Background job running... pid: %d comando: %s \n", pid_fork, argumentosHijo[0]);
 					nuevo = new_job(pid_fork, argumentosHijo[0], BACKGROUND, argumentosHijo);
@@ -315,29 +384,39 @@ int main(void)
 			}
 			if(e) 
 				printf("Dirección errónea, inexistente o faltan permisos de acceso\n");
-			getcwd(cwd, 100);
-			setenv("OLDPWD", oldpwd, 1);	// sets OLDPWD variable with overwritting
+			else {
+				getcwd(cwd, 100);
+				setenv("OLDPWD", oldpwd, 1);	// sets OLDPWD variable with overwritting
+			}
 			continue;
 		}
 		if (strcmp(args[0], "jobs") == 0) {
+			// muestra la lista de tareas
 			print_job_list(lista);
 			continue;
 		}
 		if(strcmp(args[0], "exit") == 0) {
+			// comando interno para cerrar el shell
+			// alternativa a Ctrl + D
 			if(args[1])
 				exit(atoi(args[1]));
 			exit(0);
 			continue;
 		}
 		if (strcmp(args[0], "fg") == 0) {
+			// quiero lanzar en foreground una tarea, bien suspendida bien en background
 			if(empty_list(lista)) {
 				printf("No existen tareas\n");
 			} else {
+				// existen tareas en la lista de jobs
 				int pos;
 				if(args[1] != NULL) {
+					// quiero una tarea en concreto
 					printf("FG con argumentos %s \n", args[1]);
 					pos = atoi(args[1]);
 				} else {
+					// por defecto lanza la primera tarea
+					// independientemente del estado de la misma
 					pos = 1;
 				}
 				// entrega terminal y enciende
@@ -359,8 +438,6 @@ int main(void)
 				killpg(aux -> pgid, SIGCONT);
 				
 				pid_wait = waitpid(aux -> pgid, &status, WUNTRACED);
-								
-				
 
 				// pid_wait MUST BE EQUALS TO pid_fork
 				
@@ -395,6 +472,8 @@ int main(void)
 			if(list_size(lista)) {
 				// Tiene elementos
 				if(args[1]) {
+					// como tiene argumentos, lo saco de la lista
+					// segun la posicion puesta
 					block_SIGCHLD();
 					job *aux = get_item_bypos(lista, atoi(args[1]));
 					unblock_SIGCHLD();
@@ -408,13 +487,12 @@ int main(void)
 				} else {
 					// es NULL
 					// recorrer la lista hasta el primero en STOPPED O RESPAWNABLE
-
 					// enciende sin entregar terminal
 					block_SIGCHLD();
 					int i = 1, terminar = 1;
 					while((i <= list_size(lista)) && terminar) {
 						job *aux = get_item_bypos(lista, i);
-						if(aux -> state == STOPPED) {
+						if(aux -> state == STOPPED || aux -> state ==) {
 							killpg(aux -> pgid, SIGCONT);
 							aux -> state = BACKGROUND;
 							terminar = 0;
