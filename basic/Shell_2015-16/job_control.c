@@ -34,14 +34,6 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 
 	/* read what the user enters on the command line */
 	length = read(STDIN_FILENO, inputBuffer, size);  
-	
-	// making strings from input buffer and adding to history
-	char linea[257];
-	for (i = 0; i < length; ++i)
-	{
-		linea[i] = inputBuffer[i];
-	}
-	linea[i] = '\0';
 
 	
 	start = -1;
@@ -112,7 +104,7 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 	}  // end for   
 	args[ct] = NULL; /* just in case the input line was > MAXLINE */
 
-	addToHistory(historial, args);
+	addToHistory(historial, args, *background, *respawnable);
 	
 } 
 
@@ -129,6 +121,7 @@ job * new_job(pid_t pid, const char * command, enum job_state state, char *args[
 		aux->state=state;
 		aux->command=strdup(command);
 		aux->next=NULL;
+		
 		aux -> args = (char**) malloc(sizeof(char*));
 		char ** doblePuntero = aux -> args;
 		int i = 0;
@@ -172,7 +165,17 @@ int delete_job(job * list, job * item)
 	if(aux -> next) { // aux -> next == item
 		aux -> next = item -> next;
 		free(item -> command);
+
+
+
+
+
 		// free del char **args;
+
+
+
+
+		
 		free(item);
 		list->pgid--;
 		return 1;
@@ -289,10 +292,12 @@ void print_analyzed_status(int status, int info) {
 
 // -------------- FUNCTIONS TO MANAGE HISTORY ----------------------------
 
-void addToHistory(history *lista, char *args2[]) {
+void addToHistory(history *lista, char *args2[], int bk, int resp) {
 
 	history new = (history) malloc(sizeof(struct history_));
 	new -> prev = *lista;
+	new -> background = bk;
+	new -> respawnable = resp;
 	new -> args = (char**) malloc(sizeof(char*));
 
 	char ** aux = new -> args;
@@ -303,9 +308,6 @@ void addToHistory(history *lista, char *args2[]) {
 	}
 	// args2[i] == NULL
 	aux[i] = NULL;
-
-
-	// new -> args = args2;
 	
 
 	*lista = new;
@@ -345,7 +347,7 @@ history getIelem(history lista, int index) {
 void showHistory(history lista) {
 	int i = 0;
 	while(lista != NULL) {
-		printf("%d: %s\n", i++, lista -> args[0]);
+		printf("%d: %s %s\n", i++, lista -> args[0], lista -> args[1]);
 		lista = lista -> prev;
 	}
 }

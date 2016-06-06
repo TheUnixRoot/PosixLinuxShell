@@ -54,6 +54,7 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 					fflush(NULL);
 					i--;
 				} else {
+					// la tarea es respawnable
 					char **temp = actual -> args;
 					pid_t pid_fork = fork();
 					if (pid_fork) { 
@@ -86,6 +87,7 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 					printf("STOPPED");
 					fflush(NULL);
 				} else {
+					// la tarea suspendida es respawnable
 					killpg(actual -> pgid, SIGCONT);
 					printf("RESPAWNED\n");
 					fflush(NULL);
@@ -179,8 +181,22 @@ int main(void)
 				} else {	// execute i
 					int i = atoi(args[1]);
 					history linea = getIelem(historial, i);
-					argumentosHistorial = getArgs(linea);
-					printf("%s", argumentosHistorial[0]);
+					
+					i = 0;
+					while(linea -> args[i] != NULL) {
+						strcpy(args[i], linea -> args[i]);
+						i++;
+					}
+					args[i] = NULL;		
+
+
+					background = linea -> background;
+					respawnable = linea -> respawnable;
+					
+// copiar argumentos strdup()
+
+
+					printf("%s \n", args[0]);
 				}
 
 			} else {
@@ -391,7 +407,7 @@ int main(void)
 					}
 				} else {
 					// es NULL
-					// recorrer la lista hasta el primero en STOPPED
+					// recorrer la lista hasta el primero en STOPPED O RESPAWNABLE
 
 					// enciende sin entregar terminal
 					block_SIGCHLD();
@@ -488,7 +504,7 @@ int main(void)
 		} else { // hijo
 			// Redundante para garantizar su ejecucion
 			new_process_group(getpid());
-			if(!background) {
+			if(!background && !respawnable) {
 				set_terminal(getpid());
 			}
 			restore_terminal_signals();

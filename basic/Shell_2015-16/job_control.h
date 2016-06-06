@@ -59,6 +59,8 @@ typedef struct history_ *history;
 struct history_
 {
 	history prev;
+	int background;
+	int respawnable;
 	char** args; // args[0] = 
 };
 
@@ -68,7 +70,7 @@ struct history_
 
 // -------------- FUNCTIONS TO MANAGE HISTORY ----------------------------
 
-void addToHistory(history *lista, char *args2[]);
+void addToHistory(history *lista, char *args2[], int bk, int resp);
 
 void clearHistory(history *lista);
 
