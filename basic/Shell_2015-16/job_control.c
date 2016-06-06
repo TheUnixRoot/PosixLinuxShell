@@ -37,9 +37,12 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 	
 	// making strings from input buffer and adding to history
 	char linea[257];
-	strncpy(linea, inputBuffer, length);
-	strcat(linea, "\0");
-	addToHistory(historial, linea);
+	for (i = 0; i < length; ++i)
+	{
+		linea[i] = inputBuffer[i];
+	}
+	linea[i] = '\0';
+
 	
 	start = -1;
 	if (length == 0)
@@ -108,6 +111,9 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 		}  // end switch
 	}  // end for   
 	args[ct] = NULL; /* just in case the input line was > MAXLINE */
+
+	addToHistory(historial, args);
+	
 } 
 
 
@@ -115,14 +121,31 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 /* devuelve puntero a un nodo con sus valores inicializados,
 devuelve NULL si no pudo realizarse la reserva de memoria*/
 job * new_job(pid_t pid, const char * command, enum job_state state, char *args[])
-{
+{	
 	job * aux;
-	aux=(job *) malloc(sizeof(job));
-	aux->pgid=pid;
-	aux->state=state;
-	aux->command=strdup(command);
-	aux->next=NULL;
-	aux->args = args;
+	if(args) {
+		aux=(job *) malloc(sizeof(job));
+		aux->pgid=pid;
+		aux->state=state;
+		aux->command=strdup(command);
+		aux->next=NULL;
+		aux -> args = (char**) malloc(sizeof(char*));
+		char ** doblePuntero = aux -> args;
+		int i = 0;
+		while(args[i] != NULL) {
+			doblePuntero[i] = strdup(args[i]);
+			i++;
+		}
+		// args[i] == NULL
+		doblePuntero[i] = NULL;
+	} else {
+		aux=(job *) malloc(sizeof(job));
+		aux->pgid=pid;
+		aux->state=state;
+		aux->command=strdup(command);
+		aux->next=NULL;
+		aux -> args = NULL;
+	}
 	return aux;
 }
 
@@ -266,12 +289,25 @@ void print_analyzed_status(int status, int info) {
 
 // -------------- FUNCTIONS TO MANAGE HISTORY ----------------------------
 
-void addToHistory(history *lista, char *linea) {
+void addToHistory(history *lista, char *args2[]) {
 
 	history new = (history) malloc(sizeof(struct history_));
 	new -> prev = *lista;
-	new -> line = (char*)malloc(sizeof(char)*256);
-	strcpy(new -> line, linea);
+	new -> args = (char**) malloc(sizeof(char*));
+
+	char ** aux = new -> args;
+	int i = 0;
+	while(args2[i] != NULL) {
+		aux[i] = strdup(args2[i]);
+		i++;
+	}
+	// args2[i] == NULL
+	aux[i] = NULL;
+
+
+	// new -> args = args2;
+	
+
 	*lista = new;
 
 }
@@ -281,13 +317,18 @@ void clearHistory(history *lista) {
 	while( (*lista) != NULL) {
 		aux = *lista;
 		*lista = (*lista) -> prev;
-		free(aux -> line);
+		int i = 0;
+		while(aux -> args[i] != NULL) {
+			free(aux -> args[i]);
+			i++;
+		}
+		free(aux -> args);
 		free(aux);
 	}
-	// *linea is NULL
+	// *lista is NULL
 }
 
-char* getIelem(history lista, int index) {
+history getIelem(history lista, int index) {
 	int i = 0;
 	while(i < index && lista != NULL) {
 		lista = lista -> prev;
@@ -295,7 +336,7 @@ char* getIelem(history lista, int index) {
 	}
 	if(lista) {
 		//is not null, I have Ielem
-		return lista -> line;
+		return lista;
 	} else {
 		return NULL;
 	}
@@ -304,7 +345,7 @@ char* getIelem(history lista, int index) {
 void showHistory(history lista) {
 	int i = 0;
 	while(lista != NULL) {
-		printf("%d: %s\n", i++, lista -> line);
+		printf("%d: %s\n", i++, lista -> args[0]);
 		lista = lista -> prev;
 	}
 }
@@ -321,9 +362,20 @@ void removeIelem(history *lista, int index) {
 	if(it) {
 		// is not NULL
 		aux -> prev = it -> prev;
-		free(it -> line);
+
+		int i = 0;
+		while(it -> args[i] != NULL) {
+			free(it -> args[i]);
+			i++;
+		}
+		free(it -> args);
 		free(it);
 	}
 }
+
+char** getArgs(history nodo) {
+	return nodo -> args;
+}
+
 
 // -----------------------------------------------------------------------

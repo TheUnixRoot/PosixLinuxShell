@@ -59,7 +59,7 @@ typedef struct history_ *history;
 struct history_
 {
 	history prev;
-	char* line;
+	char** args; // args[0] = 
 };
 
 // -----------------------------------------------------------------------
@@ -68,16 +68,17 @@ struct history_
 
 // -------------- FUNCTIONS TO MANAGE HISTORY ----------------------------
 
-void addToHistory(history *lista, char *linea);
+void addToHistory(history *lista, char *args2[]);
 
 void clearHistory(history *lista);
 
-char* getIelem(history lista, int index);
+history getIelem(history lista, int index);
 
 void showHistory(history lista);
 
 void removeIelem(history *lista, int index);
 
+char** getArgs(history nodo);
 
 // -----------------------------------------------------------------------
 

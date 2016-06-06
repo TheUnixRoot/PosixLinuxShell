@@ -58,7 +58,6 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 					pid_t pid_fork = fork();
 					if (pid_fork) { 
 						// código del padre
-						set_terminal(getpid());
 						// lo meto en el grupo viejo??
 						setpgid(pid_fork, actual -> pgid);		// VA DE LUJO, PERO NO SE POR QUÉ
 						// Lo agrego a la lista de jobs
@@ -137,6 +136,8 @@ int main(void)
 	int respawnable;
 	history historial = NULL;
 
+	char **argumentosHistorial = NULL;
+
 	job *nuevo, *aux;
 	lista = new_list("Jobs list");
 	signal(SIGCHLD, my_sigchld);
@@ -155,39 +156,42 @@ int main(void)
 	gethostname(pc,40);
 	getcwd(cwd, 100);
 
+	char * oldpwd = getenv("OLDPWD");
 	char * home = getenv("HOME");
-	printf("%s\n", home);
 	
 	while (1) {		/* Program terminates normally inside get_command() after ^D is typed*/
 
 		printf/*("<¯\\_(ツ)_/¯>");/*/("%s@%s:%s>", user, pc, cwd);
 		fflush(stdout);
 		get_command(inputBuffer, MAX_LINE, args, &background, &respawnable, &historial);  /* get next command */
-		
+		argumentosHistorial = NULL;
 		if(args[0]==NULL) continue;   // if empty command
 
-		if (strcmp(args[0], "hola") == 0) {
-			printf("%s\n", "Hello world");
-			continue;
-		}
 		if (strcmp(args[0], "history") == 0) {
 			if(args[1]) {
 				// quiere una operación en concreto
-				if(strcmp(args[1], "-r") == 0) {	// -r i remove
+				if(strcmp(args[1], "-remove") == 0) {	// -r i remove
 					removeIelem(&historial, atoi(args[2]));
-
-				} else if (strcmp(args[1], "-c") == 0) {	// -c clear
+					continue;
+				} else if (strcmp(args[1], "-clear") == 0) {	// -c clear
 					clearHistory(&historial);
-
-				} else {	// show i
+					continue;
+				} else {	// execute i
 					int i = atoi(args[1]);
-					printf("elemento %d: %s\n", atoi(args[1]), getIelem(historial, i));
+					history linea = getIelem(historial, i);
+					argumentosHistorial = getArgs(linea);
+					printf("%s", argumentosHistorial[0]);
 				}
 
 			} else {
 				// quiere todo
 				showHistory(historial);
+				continue;
 			}
+		}
+
+		if (strcmp(args[0], "hola") == 0) {
+			printf("%s\n", "Hello world");
 			continue;
 		}
 		if (strcmp(args[0], "time-out") == 0) {
@@ -281,14 +285,22 @@ int main(void)
 		}
 		if (strcmp(args[0], "cd") == 0) {
 			int e;
-			if(args[1])	// path absoluto
-				e = chdir(args[1]);
-			else {		// path por defecto
+			if(args[1]) {	// path absoluto
+				if(strcmp(args[1], "-") == 0) {
+					chdir(oldpwd);
+					strcpy(oldpwd, cwd);
+				} else {
+					getcwd(oldpwd, 100);
+					e = chdir(args[1]);
+				}
+			} else {		// path por defecto
+				getcwd(oldpwd, 100);
 				e = chdir(home);
 			}
 			if(e) 
 				printf("Dirección errónea, inexistente o faltan permisos de acceso\n");
 			getcwd(cwd, 100);
+			setenv("OLDPWD", oldpwd, 1);	// sets OLDPWD variable with overwritting
 			continue;
 		}
 		if (strcmp(args[0], "jobs") == 0) {
@@ -484,5 +496,6 @@ int main(void)
 			printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
 			exit(EXIT_FAILURE);
 		}
+	
 	} // end while
 }
