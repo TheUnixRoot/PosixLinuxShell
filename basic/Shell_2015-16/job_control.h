@@ -82,6 +82,8 @@ void removeIelem(history *lista, int index);
 
 char** getArgs(history nodo);
 
+int length(history lista);
+
 // -----------------------------------------------------------------------
 
 void get_command(char inputBuffer[], int size, char *args[],int *background, int *respawnable, history *historial);

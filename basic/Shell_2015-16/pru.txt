@@ -1,0 +1,18 @@
+total 528
+drwxr-xr-x 1 theunixroot users    338 jun  7 10:05 .
+drwxr-xr-x 1 theunixroot users    196 may 12 10:59 ..
+-rw-r--r-- 1 theunixroot users      1 jun  6 23:05 entrada
+-rwxr-xr-x 1 theunixroot users  12448 jun  6 22:59 inNumber
+-rw-r--r-- 1 theunixroot users    135 jun  6 22:53 inNumber.c
+-rw-r--r-- 1 theunixroot users   9379 jun  6 23:26 job_control.c
+-rw-r--r-- 1 theunixroot users   4832 jun  6 17:28 job_control.h
+-rw-r--r-- 1 theunixroot users    125 may 24 17:42 prog.c
+-rw-r--r-- 1 theunixroot users      0 jun  7 10:05 pru.txt
+-rwxr-xr-x 1 theunixroot users  32064 jun  7 10:03 shell
+-rw-r--r-- 1 theunixroot users  29031 jun  7 10:03 Shell_project.c
+-rwxr-xr-x 1 theunixroot users  12760 jun  6 17:06 termios
+-rwxr-xr-x 1 theunixroot users  12848 jun  1 17:57 threadTimeout
+-rw-r--r-- 1 theunixroot users    814 jun  1 17:44 threadTimeout.c
+-rw-r--r-- 1 theunixroot users    637 jun  1 17:44 threadTimeout.h
+-rwxr-xr-x 1 theunixroot users  12544 may 24 17:42 true
+-r--r--r-- 1 theunixroot users 367369 may  8 22:49 UNIX_Shell_project-GIIA1516.pdf

@@ -247,11 +247,14 @@ int main(void)
 					continue;
 				} else {	// execute i
 					int i = atoi(args[1]);
+					if(i > length(historial) || i < 0){
+						printf("Error, el argumento del historial no es un numero valido\n");
+						continue;
+					}
 					history linea = getIelem(historial, i);
-					
 					i = 0;
 					while(linea -> args[i] != NULL) {
-						strcpy(args[i], linea -> args[i]);
+						args[i] = linea -> args[i];
 						i++;
 					}
 					args[i] = NULL;		
@@ -271,6 +274,397 @@ int main(void)
 				continue;
 			}
 		}
+		// redirección a entrada o salida de fichero
+		int j = 0;
+		while((strcmp(args[j], ">") != 0) && (strcmp(args[j], "<") != 0) && (args[j+1] != NULL)) {
+			j++;
+		}
+		if(args[j+1] == NULL){	// do nothing, no hay redirección
+		} else if(strcmp(args[j],"<") == 0) {
+
+			// toca redirigir la entrada 
+			FILE *infile;
+			int fnum1,fnum2;
+			
+			printf("redirección de entrada\n");
+			
+			pid_fork = fork();
+			/*-----------padre-----------*/
+			if(pid_fork) {
+				// código del padre
+				// --->
+				struct termios conf;	// configuracion antes de lanzar job
+				int shell_terminal; 	// descriptor de fichero del terminal
+				shell_terminal = STDIN_FILENO;
+    			/* leemos la configuracion actual */
+   				tcgetattr(shell_terminal, &conf);
+				// <---
+			
+				// Nuevo grupo para mi hijo
+				new_process_group(pid_fork);
+			
+				if(background) {
+					// Lo agrego a la lista de jobs
+					printf("Background job running... pid: %d comando: %s \n", pid_fork, args[0]);
+					nuevo = new_job(pid_fork, args[0], BACKGROUND, args);
+					block_SIGCHLD();
+					// Evito que me interrumpan
+					add_job(lista, nuevo);
+					unblock_SIGCHLD();
+					// libero la lista
+
+				} else if (respawnable) {
+					// Lo agrego a la lista de jobs
+					printf("Respawnable job running at background... pid: %d comando: %s \n", pid_fork, args[0]);
+					nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args);
+					block_SIGCHLD();
+					// Evito que me interrumpan
+					add_job(lista, nuevo);
+					unblock_SIGCHLD();
+					// libero la lista
+
+				} else {
+					// Le cedo el terminal
+					set_terminal(pid_fork);
+
+					pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+					// pid_wait MUST BE EQUALS TO pid_fork
+					
+					// Le quito el terminal
+					set_terminal(getpid());
+
+					int status2;
+					status2 = analyze_status(status, &info);
+					printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[0], status2?"EXITED":"SUSPENDED");
+					print_analyzed_status(status2, info);
+
+					if(status2 == SUSPENDED) {
+						// Lo agrego a la lista de jobs
+						nuevo = new_job(pid_fork, args[0], STOPPED, args);
+						block_SIGCHLD();
+						// Evito que me interrumpan
+						add_job(lista, nuevo);
+						unblock_SIGCHLD();
+						// libero la lista
+					}
+				}
+				// --->
+				tcsetattr(shell_terminal, TCSANOW, &conf);
+				// <---
+				continue;
+			/*------------hijo-----------*/
+			} else {
+				if (NULL==(infile=fopen(args[j+1],"r"))) {
+					printf("\tError: abriendo: %s\n",args[j+1]);
+					return(-1);
+				}
+				args[j] = NULL;
+				// termino la estructura de argumentos en el elemento de redirección, 
+				// porque los argumentos están antes seguro
+
+				fnum1=fileno(infile);
+				fnum2=fileno(stdin);
+				dup2(fnum1,fnum2);
+
+				new_process_group(getpid());
+				if(!background && !respawnable) {
+					set_terminal(getpid());
+				}
+				restore_terminal_signals();
+				execvp(args[0], args);
+				printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+				exit(EXIT_FAILURE);
+			}
+			// done
+		} else if(strcmp(args[j], ">") == 0) {
+			
+			// toca redirigir la salida
+			FILE *outfile;
+			int fnum1,fnum2;
+			
+			pid_fork = fork();
+			/*-----------padre-----------*/
+			if(pid_fork) {
+			// código del padre
+			// --->
+			struct termios conf;	// configuracion antes de lanzar job
+			int shell_terminal; 	// descriptor de fichero del terminal
+			shell_terminal = STDIN_FILENO;
+    		/* leemos la configuracion actual */
+   			tcgetattr(shell_terminal, &conf);
+			// <---
+			
+			// Nuevo grupo para mi hijo
+			new_process_group(pid_fork);
+			
+			if(background) {
+				// Lo agrego a la lista de jobs
+				printf("Background job running... pid: %d comando: %s \n", pid_fork, args[0]);
+				nuevo = new_job(pid_fork, args[0], BACKGROUND, args);
+				block_SIGCHLD();
+				// Evito que me interrumpan
+				add_job(lista, nuevo);
+				unblock_SIGCHLD();
+				// libero la lista
+
+			} else if (respawnable) {
+				// Lo agrego a la lista de jobs
+				printf("Respawnable job running at background... pid: %d comando: %s \n", pid_fork, args[0]);
+				nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args);
+				block_SIGCHLD();
+				// Evito que me interrumpan
+				add_job(lista, nuevo);
+				unblock_SIGCHLD();
+				// libero la lista
+
+			} else {
+				// Le cedo el terminal
+				set_terminal(pid_fork);
+
+				pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+				// pid_wait MUST BE EQUALS TO pid_fork
+				
+				// Le quito el terminal
+				set_terminal(getpid());
+
+				int status2;
+				status2 = analyze_status(status, &info);
+				printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[0], status2?"EXITED":"SUSPENDED");
+				print_analyzed_status(status2, info);
+
+				if(status2 == SUSPENDED) {
+					// Lo agrego a la lista de jobs
+					nuevo = new_job(pid_fork, args[0], STOPPED, args);
+					block_SIGCHLD();
+					// Evito que me interrumpan
+					add_job(lista, nuevo);
+					unblock_SIGCHLD();
+					// libero la lista
+				}
+			}
+			// --->
+			tcsetattr(shell_terminal, TCSANOW, &conf);
+			// <---
+			continue;
+			/*------------hijo-----------*/
+			} else {
+				if (NULL==(outfile=fopen(args[j+1],"w"))) {
+					printf("\tError: abriendo: %s\n",args[j+1]);
+					return(-1);
+				}
+				args[j] = NULL;
+				// termino la estructura de argumentos en el elemento de redirección, 
+				// porque los argumentos están antes seguro
+
+				fnum1=fileno(outfile);
+				fnum2=fileno(stdout);
+				dup2(fnum1,fnum2);
+
+				new_process_group(getpid());
+				if(!background && !respawnable) {
+					set_terminal(getpid());
+				}
+				restore_terminal_signals();
+				execvp(args[0], args);
+				printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+				exit(EXIT_FAILURE);
+			}
+			// done
+		}
+		if (strcmp(args[0], "children") == 0) {
+			printf("PID\tCOMMAND\t#CHILDREN\t#THREADS\n");
+			// TODO
+			continue;
+		}
+
+
+		/*
+		 * MIS PIPES
+		 * NO PERMITEN
+		 * EJECUCION EN
+		 * BACKGROUD
+		 */
+		j = 0;
+		int start = 0;
+		// args[0] -> args[j] comando con pipe de salida
+		int desc[2], ant[2];
+		int thereIs = 0;
+		pid_t first_pid;
+		while(args[j] != NULL) {
+			// printf("%d\n", start);
+			while((strcmp(args[j], "|") != 0) && (args[j+1] != NULL)) {	// busca un pipe
+				j++;
+			}
+			// desde start hasta j hay un comando y desde j+1 hasta ?? está el otro
+			
+
+			if(args[j+1] == NULL && !thereIs){	// do nothing, no hay pipe
+
+			} else if(args[j+1] == NULL) {		// es el ultimo, pero hay pipe
+				
+				args[j] = NULL;
+					
+				pid_fork = fork();
+				/*-----------padre-----------*/
+				if(pid_fork) {
+					// código del padre
+					
+					if(start == 0) {
+						// primer hijo
+						first_pid = pid_fork;
+					}
+					// --->
+					struct termios conf;	// configuracion antes de lanzar job
+					int shell_terminal; 	// descriptor de fichero del terminal
+					shell_terminal = STDIN_FILENO;
+ 					/* leemos la configuracion actual */
+					tcgetattr(shell_terminal, &conf);
+					// <---
+				
+					// Nuevo grupo para todos mis hijos
+					setpgid (pid_fork, first_pid);
+					// Le cedo el terminal
+					set_terminal(first_pid);
+					
+					close(ant[0]);
+					close(ant[1]);
+
+
+					// FALTA EL WAIT !! //
+
+
+					// --->
+					tcsetattr(shell_terminal, TCSANOW, &conf);
+					// <---
+
+					/*
+							// Le cedo el terminal
+					set_terminal(pid_fork);
+
+					pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+					// pid_wait MUST BE EQUALS TO pid_fork
+					
+					// Le quito el terminal
+					set_terminal(getpid());
+
+					int status2;
+					status2 = analyze_status(status, &info);
+					printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[0], status2?"EXITED":"SUSPENDED");
+					print_analyzed_status(status2, info);
+				
+				
+			
+					*/
+				
+				/*-----------hijo-----------*/
+				} else {	// es el ultimo hijo
+					
+					dup2(ant[0],fileno(stdin));
+					close(ant[1]);
+					
+					// codigos del hijo
+					
+					// termino la estructura de argumentos en el elemento del pipe, 
+					// porque los argumentos están antes seguro
+					
+					printf("Ha entrado por el tengo pipe y es el ultimo\n");
+
+					char **argumentosHijoPipe = &args[start]; 
+					restore_terminal_signals();
+					execvp(argumentosHijoPipe[0], argumentosHijoPipe);
+					printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+					exit(EXIT_FAILURE);
+				}
+			} else {
+				thereIs = 1;
+				// toca crear un pipe 
+				pipe(desc);
+				// creo el pipe
+				args[j] = NULL;
+					
+				pid_fork = fork();
+				/*-----------padre-----------*/
+				if(pid_fork) {
+					// código del padre
+					
+					if(start == 0) {
+						// primer hijo
+						first_pid = pid_fork;
+					}
+					// --->
+					struct termios conf;	// configuracion antes de lanzar job
+					int shell_terminal; 	// descriptor de fichero del terminal
+					shell_terminal = STDIN_FILENO;
+ 					/* leemos la configuracion actual */
+					tcgetattr(shell_terminal, &conf);
+					// <---
+				
+					// Nuevo grupo para todos mis hijos
+					setpgid (pid_fork, first_pid);
+					// Le cedo el terminal
+					set_terminal(first_pid);
+					
+					close(ant[0]);
+					close(ant[1]);
+
+
+					// FALTA EL WAIT !! //
+
+
+					// --->
+					tcsetattr(shell_terminal, TCSANOW, &conf);
+					// <---
+
+					/*
+							// Le cedo el terminal
+					set_terminal(pid_fork);
+
+					pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+					// pid_wait MUST BE EQUALS TO pid_fork
+					
+					// Le quito el terminal
+					set_terminal(getpid());
+
+					int status2;
+					status2 = analyze_status(status, &info);
+					printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[0], status2?"EXITED":"SUSPENDED");
+					print_analyzed_status(status2, info);
+				
+				
+			
+					*/
+				
+				/*-----------hijo-----------*/
+				} else {
+					/* cambia la salida estandar porque sé que no es el ultimo */
+					dup2(desc[1],fileno(stdout));
+					close(desc[0]);
+					if(0 != start) {
+						/* cambia la entrada si no es el primero*/
+						dup2(ant[0],fileno(stdin));
+						close(ant[1]);
+					}
+					// codigos del hijo
+					
+					// termino la estructura de argumentos en el elemento del pipe, 
+					// porque los argumentos están antes seguro
+					printf("descriptor creado, por delante y por detras\n");
+					char **argumentosHijoPipe = &args[start]; 
+					restore_terminal_signals();
+					execvp(argumentosHijoPipe[0], argumentosHijoPipe);
+					printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
+					exit(EXIT_FAILURE);
+
+				}
+			}
+			ant[0] = desc[0];
+			ant[1] = desc[1];
+			start = j+1;
+			j++;
+		}
+		// done
+
+
 
 		if (strcmp(args[0], "hola") == 0) {
 			printf("%s\n", "Hello world");
@@ -292,6 +686,10 @@ int main(void)
 				elem *theOne;		// usa el elemento de la lista de procesos
 				int pgid = pid_fork;
 				int when = atoi(args[1]);
+				if(when < 0){
+					printf("Error, el argumento de time-out no es un numero valido\n");
+					continue;
+				}
 				// Incluir info del temporizador en la estructura de tipo elem
 				theOne = (elem *)malloc(sizeof(elem));
 				theOne->pgid = pgid; // a quien vamos a matar
@@ -413,8 +811,12 @@ int main(void)
 				int pos;
 				if(args[1] != NULL) {
 					// quiero una tarea en concreto
-					printf("FG con argumentos %s \n", args[1]);
+					// printf("FG con argumentos %s \n", args[1]);
 					pos = atoi(args[1]);
+					if(pos > list_size(lista) || pos < 1){
+						printf("Error, el argumento de fg no es un numero valido\n");
+						continue;
+					}
 				} else {
 					// por defecto lanza la primera tarea
 					// independientemente del estado de la misma
@@ -476,7 +878,12 @@ int main(void)
 					// como tiene argumentos, lo saco de la lista
 					// segun la posicion puesta
 					block_SIGCHLD();
-					job *aux = get_item_bypos(lista, atoi(args[1]));
+					int i = atoi(args[1]);
+					if(i > list_size(lista) || i < 1){
+						printf("Error, el argumento de bg no es un numero valido\n");
+						continue;
+					}
+					job *aux = get_item_bypos(lista, i);
 					unblock_SIGCHLD();
 					if (aux -> state == BACKGROUND) {
 						printf("Proceso ya en background\n");

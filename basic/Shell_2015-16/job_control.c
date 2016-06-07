@@ -122,7 +122,8 @@ job * new_job(pid_t pid, const char * command, enum job_state state, char *args[
 		aux->command=strdup(command);
 		aux->next=NULL;
 		
-		aux -> args = (char**) malloc(sizeof(char*));
+		aux -> args = (char**) malloc(sizeof(char*)*128);
+
 		char ** doblePuntero = aux -> args;
 		int i = 0;
 		while(args[i] != NULL) {
@@ -166,15 +167,12 @@ int delete_job(job * list, job * item)
 		aux -> next = item -> next;
 		free(item -> command);
 
-
-
-
-
-		// free del char **args;
-
-
-
-
+		int i = 0;
+		while(item -> args[i] != NULL) {
+			free(item -> args[i]);
+			i++;
+		}
+		free(item -> args);
 		
 		free(item);
 		list->pgid--;
@@ -293,25 +291,28 @@ void print_analyzed_status(int status, int info) {
 // -------------- FUNCTIONS TO MANAGE HISTORY ----------------------------
 
 void addToHistory(history *lista, char *args2[], int bk, int resp) {
+	if (args2[0]) {
 
-	history new = (history) malloc(sizeof(struct history_));
-	new -> prev = *lista;
-	new -> background = bk;
-	new -> respawnable = resp;
-	new -> args = (char**) malloc(sizeof(char*));
+		history new = (history) malloc(sizeof(struct history_));
+		new -> prev = *lista;
+		new -> background = bk;
+		new -> respawnable = resp;
 
-	char ** aux = new -> args;
-	int i = 0;
-	while(args2[i] != NULL) {
-		aux[i] = strdup(args2[i]);
-		i++;
+		// recorro y saco la longitud
+
+		new -> args = (char**) malloc(sizeof(char*)*128);
+
+		char ** aux = new -> args;
+		int i = 0;
+		while(args2[i] != NULL) {
+			aux[i] = strdup(args2[i]);
+			i++;
+		}
+		// args2[i] == NULL
+		aux[i] = NULL;
+
+		*lista = new;
 	}
-	// args2[i] == NULL
-	aux[i] = NULL;
-	
-
-	*lista = new;
-
 }
 
 void clearHistory(history *lista) {
@@ -347,8 +348,9 @@ history getIelem(history lista, int index) {
 void showHistory(history lista) {
 	int i = 0;
 	while(lista != NULL) {
-		printf("%d: %s\n", i++, lista -> args[0]);
+		printf("%d: %s\n", i+1, lista -> args[0]);
 		lista = lista -> prev;
+		i++;
 	}
 }
 
@@ -379,5 +381,14 @@ char** getArgs(history nodo) {
 	return nodo -> args;
 }
 
+
+int length(history lista) {
+	int i = 0;
+	while(lista != NULL) {
+		lista = lista -> prev;
+		i++;
+	}
+	return i;
+}
 
 // -----------------------------------------------------------------------
