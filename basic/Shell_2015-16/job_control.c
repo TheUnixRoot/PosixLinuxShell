@@ -348,7 +348,14 @@ history getIelem(history lista, int index) {
 void showHistory(history lista) {
 	int i = 0;
 	while(lista != NULL) {
-		printf("%d: %s\n", i+1, lista -> args[0]);
+		printf("%d: ", i+1);
+		int j = 0;
+		char ** aux = lista -> args;
+		while(aux[j] != NULL) {
+			printf("%s ", aux[j]);
+			j++;
+		}
+		printf("\n");
 		lista = lista -> prev;
 		i++;
 	}
@@ -391,4 +398,14 @@ int length(history lista) {
 	return i;
 }
 
-// -----------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+
+/*------------------Procedimiento para calcular el numero de argumentos-------------------------*/
+int longitudArgs(char ** args) {
+	int i = 0;
+	while(args[i] != NULL) {
+		i++;
+	}
+	return i;
+}
+/*----------------------------------------------------------------------------------------------*/
