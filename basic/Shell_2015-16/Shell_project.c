@@ -43,7 +43,8 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 		int pid_wait = waitpid((-actual->pgid), &status, WUNTRACED|WNOHANG|WCONTINUED);
 		// waits to any child from the pgid 
 		
-		if(pid_wait != -1) {
+		if(pid_wait != -1) {	// no puedo utilizar getpgid, porque si muere, no existe como proceso
+
 			// Este grupo de procesos ha recibido una señal
 			// Lo he encontrado
 			status_res = analyze_status(status, &info);
@@ -121,9 +122,13 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 							i--;
 						}
 					} else if(info == 13) {	// SIGPIPE
-							delete_job(lista, actual);
-							i--;
-					}
+							if (actual -> numProc > 1)
+								actual -> numProc--;
+							else {
+								delete_job(lista, actual);
+								i--;
+							}
+						}
 				} else {
 					if (info == 19) {
 						// la tarea suspendida es respawnable, 
@@ -611,7 +616,7 @@ int main(void)
 				continue;
 			} else {	// tenemos pipes, vamos a ponernos a trabajar
 				// TERMIOS WHEREEEEE
-				// reclio la variable out
+				// reclio la variable out como inicio de los argumentos del programa
 				out = 0;
 				for (k = 0; k < numPipes; ++k) {
 					pipe(descf);
@@ -665,6 +670,11 @@ int main(void)
 					dup2(anterior[0],fileno(stdin));
 					close(anterior[1]);
 					// args[out] es el ultimo comando, termina en args[argc] que ya es NULL
+					// Nuevo grupo para mi hijo
+					setpgid(getpid(), getpid());
+					for (k = 0; k < numPipes; ++k) {	// meto a todos los hijos en el mismo grupo
+						setpgid (posicionesPipes[k], getpid());
+					}
 					restore_terminal_signals();
 					execvp(args[out], &args[out]);
 					printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
