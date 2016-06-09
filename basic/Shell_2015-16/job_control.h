@@ -47,6 +47,7 @@ static char* state_strings[] = { "Foreground","Background","Stopped","Respawnabl
 typedef struct job_
 {
 	pid_t pgid; /* group id = process lider id */
+	int numProc;
 	char * command; /* program name */
 	enum job_state state;
 	struct job_ *next; /* next job in the list */
@@ -88,7 +89,7 @@ int length(history lista);
 
 void get_command(char inputBuffer[], int size, char *args[],int *background, int *respawnable, history *historial);
 
-job * new_job(pid_t pid, const char * command, enum job_state state, char **args);
+job * new_job(pid_t pid, const char * command, enum job_state state, char **args, int numProc);
 
 void add_job (job * list, job * item);
 
@@ -129,7 +130,7 @@ void block_signal(int signal, int block);
 #define list_size(list) 	 list->pgid   // number of jobs in the list
 #define empty_list(list) 	 !(list->pgid)  // returns 1 (true) if the list is empty
 
-#define new_list(name) 			 new_job(0,name,FOREGROUND, NULL)  // name must be const char *
+#define new_list(name) 			 new_job(0,name,FOREGROUND, NULL, 0)  // name must be const char *
 
 #define print_job_list(list) 	 print_list(list, print_item)
 

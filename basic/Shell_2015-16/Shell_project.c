@@ -40,9 +40,11 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 		// itero por toda la lista de jobs preguntando que les ha 
 		// pasado a los procesos miembros
 		actual = get_item_bypos(lista, i);
-		int pid_wait = waitpid(actual->pgid, &status, WUNTRACED|WNOHANG|WCONTINUED);
-		if(pid_wait == actual->pgid) {
-			// Este proceso ha recibido una señal
+		int pid_wait = waitpid((-actual->pgid), &status, WUNTRACED|WNOHANG|WCONTINUED);
+		// waits to any child from the pgid 
+		
+		if(pid_wait != -1) {
+			// Este grupo de procesos ha recibido una señal
 			// Lo he encontrado
 			status_res = analyze_status(status, &info);
 			print_analyzed_status(status_res, info);
@@ -51,17 +53,22 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 			if (status_res == EXITED) {
 				if(actual -> state != RESPAWNABLE) {
 					// el proceso ha finalizado y no es respawnable
-					delete_job(lista, actual);
-					printf("EXITED\n");
-					fflush(NULL);
-					i--;
+					// puede tener más miembros en el grupo
+					if(actual -> numProc == 1) {
+						delete_job(lista, actual);
+						printf("EXITED\n");
+						fflush(NULL);
+						i--;
+					} else {
+						actual -> numProc--;
+					}
 				} else {
 					// la tarea que ha acabado es respawnable
 					char **temp = actual -> args;
 					pid_t pid_fork = fork();
 					if (pid_fork) {		// código del padre
 						// Nuevo grupo para mi hijo
-						new_process_group(pid_fork);
+						setpgid (pid_fork, pid_fork);
 						// Lo agrego a la lista de jobs
 						actual -> pgid = pid_fork;
 					} else {	// hijo
@@ -107,9 +114,12 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 					if (info == 19) {
 						actual -> state = STOPPED;
 					} else if(info == 9 || info == 15) {
-
-						delete_job(lista, actual);
-						i--;
+						if(actual -> numProc > 1) {
+							actual -> numProc--;
+						} else {
+							delete_job(lista, actual);
+							i--;
+						}
 					}
 				} else {
 					if (info == 19) {
@@ -124,9 +134,8 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 						pid_t pid_fork = fork();
 						if (pid_fork) { 
 							// código del padre
-							// Nuevo grupo para mi hijo
-							new_process_group(pid_fork);
-			
+							// Nuevo grupo para mi hijo						
+							setpgid (pid_fork, pid_fork);
 
 							// Lo agrego a la lista de jobs
 							actual -> pgid = pid_fork;
@@ -134,7 +143,7 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 							// hijo
 							// Redundante para garantizar su ejecucion
 							// creo un nuevo grupo
-							new_process_group(getpid());
+							setpgid(getpid(), getpid());
 							
 
 							restore_terminal_signals();
@@ -401,7 +410,7 @@ int main(void)
 				if(background) {
 					// Lo agrego a la lista de jobs
 					printf("Background job running... pid: %d comando: %s \n", pid_fork, args[0]);
-					nuevo = new_job(pid_fork, args[0], BACKGROUND, args);
+					nuevo = new_job(pid_fork, args[0], BACKGROUND, args, 1);
 					block_SIGCHLD();
 					// Evito que me interrumpan
 					add_job(lista, nuevo);
@@ -411,7 +420,7 @@ int main(void)
 				} else if (respawnable) {
 					// Lo agrego a la lista de jobs
 					printf("Respawnable job running at background... pid: %d comando: %s \n", pid_fork, args[0]);
-					nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args);
+					nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args, 1);
 					block_SIGCHLD();
 					// Evito que me interrumpan
 					add_job(lista, nuevo);
@@ -435,7 +444,7 @@ int main(void)
 
 					if(status_res == SUSPENDED) {
 						// Lo agrego a la lista de jobs
-						nuevo = new_job(pid_fork, args[0], STOPPED, args);
+						nuevo = new_job(pid_fork, args[0], STOPPED, args, 1);
 						block_SIGCHLD();
 						// Evito que me interrumpan
 						add_job(lista, nuevo);
@@ -624,6 +633,7 @@ int main(void)
 							dup2(descf[1],fileno(stdout));
 							close(descf[0]);
 						}						// es el ultimo pipe
+
 						if(numPipes == 1) {		// es el unico pipe, pongo la salida y fuera hago la entrada
 							dup2(descf[1],fileno(stdout));
 							close(descf[0]);
@@ -660,27 +670,37 @@ int main(void)
 				// ultimo hijo creado
 				
 				// Nuevo grupo para mi hijo
-				new_process_group(pid_fork);
+				setpgid(pid_fork, pid_fork);
 				for (k = 0; k < numPipes; ++k) {	// meto a todos los hijos en el mismo grupo
 					setpgid (posicionesPipes[k], pid_fork);
 				}
-				// entrego terminal a los procesos
-				set_terminal(pid_fork);
-				// wait del ultimo hijo
-				pid_wait = waitpid(pid_fork, &status, WUNTRACED);
-				// pid_wait MUST BE EQUALS TO pid_fork
-				if(pid_wait == pid_fork) {	// ha muerto el ultimo, 
-					// tengo que hacer wait de todo el array de hijos
-					out = 0;
-					j = 0;
-					while(j < numPipes) {
-						waitpid(posicionesPipes[j], &status, WUNTRACED);
-						j++;
-					}		
+				if(background) {
+					// Lo agrego a la lista de jobs
+					printf("Background pipe job running... pgid: %d \n", pid_fork);
+					nuevo = new_job(pid_fork, args[0], BACKGROUND, args, numPipes+1);
+					block_SIGCHLD();
+					// Evito que me interrumpan
+					add_job(lista, nuevo);
+					unblock_SIGCHLD();
+					// libero la lista
+				} else {
+					// entrego terminal a los procesos
+					set_terminal(pid_fork);
+					// wait del ultimo hijo
+					pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+					// pid_wait MUST BE EQUALS TO pid_fork
+					if(pid_wait == pid_fork) {	// ha muerto el ultimo, 
+						// tengo que hacer wait de todo el array de hijos
+						out = 0;
+						j = 0;
+						while(j < numPipes) {
+							waitpid(posicionesPipes[j], &status, WUNTRACED);
+							j++;
+						}		
+					}
+					// Le quito el terminal
+					set_terminal(getpid());
 				}
-				// Le quito el terminal
-				set_terminal(getpid());
-
 				printf("Pipe finalizado con exito\n");
 				continue;
 			}	
@@ -691,20 +711,20 @@ int main(void)
 			continue;
 		}
 		if (strcmp(args[0], "time-out") == 0) {
-			// comando interno para lanzar una tarea en modo time-out
-			// no controla el lanzamiento de una tarea respawnable en time-out
-			// debido a la naturaleza del respawnable, es absurdo, con lo que el 
-			// time-out prevalece, eliminando la cualidad respawnable
-			// args[1] tiene los segundos de vida del job
-			// args[2] tiene el comando
-			// args[3-inf] tienen los parametros
+			 /* comando interno para lanzar una tarea en modo time-out
+			 * no controla el lanzamiento de una tarea respawnable en time-out
+			 * debido a la naturaleza del respawnable, es absurdo, con lo que el 
+			 * time-out prevalece, eliminando la cualidad respawnable
+			 * args[1] tiene los segundos de vida del job
+			 * args[2] tiene el comando
+			 * args[3-inf] tienen los parametros
+			 */
 			pthread_t thid;
 			elem *theOne;		// usa el elemento de la lista de procesos
 			int pgid = pid_fork;
 			int when = atoi(args[1]);
 			fflush(NULL);
-			if(when < 0){
-				// COMPROBAR EL ATOI TIENE QUE SER NUMEROS
+			if(when < 1){	// Controla cuando introduzco numeros negativos y caracteres (dan 0 en atoi)
 				printf("Error, el argumento de time-out no es un numero valido\n");
 				continue;
 			}
@@ -730,13 +750,13 @@ int main(void)
 				// <---
 				
 				// Nuevo grupo para mi hijo
-				new_process_group(pid_fork);
+				setpgid(pid_fork, pid_fork);
 				char** argumentosHijo = &args[2];
 					
 				if(background || respawnable) {
 					// Lo agrego a la lista de jobs
 					printf("Background job running... pid: %d comando: %s \n", pid_fork, argumentosHijo[0]);
-					nuevo = new_job(pid_fork, argumentosHijo[0], BACKGROUND, argumentosHijo);
+					nuevo = new_job(pid_fork, argumentosHijo[0], BACKGROUND, argumentosHijo, 1);
 					block_SIGCHLD();
 					// Evito que me interrumpan
 					add_job(lista, nuevo);
@@ -759,7 +779,7 @@ int main(void)
 
 					if(status_res == SUSPENDED) {
 						// Lo agrego a la lista de jobs
-						nuevo = new_job(pid_fork, argumentosHijo[0], STOPPED, argumentosHijo);
+						nuevo = new_job(pid_fork, argumentosHijo[0], STOPPED, argumentosHijo, 1);
 						block_SIGCHLD();
 						// Evito que me interrumpan
 						add_job(lista, nuevo);
@@ -776,7 +796,7 @@ int main(void)
 			
 			} else { // hijo
 				// Redundante para garantizar su ejecucion
-				new_process_group(getpid());
+				setpgid(getpid(), getpid());
 				if(!background) {
 					set_terminal(getpid());
 				}
@@ -810,8 +830,7 @@ int main(void)
 			}
 			continue;
 		}
-		if (strcmp(args[0], "jobs") == 0) {
-			// muestra la lista de tareas
+		if (strcmp(args[0], "jobs") == 0) {	// muestra la lista de tareas
 			print_job_list(lista);
 			continue;
 		}
@@ -952,12 +971,12 @@ int main(void)
 			// <---
 			
 			// Nuevo grupo para mi hijo
-			new_process_group(pid_fork);
+			setpgid(pid_fork, pid_fork);
 			
 			if(background) {
 				// Lo agrego a la lista de jobs
 				printf("Background job running... pid: %d comando: %s \n", pid_fork, args[0]);
-				nuevo = new_job(pid_fork, args[0], BACKGROUND, args);
+				nuevo = new_job(pid_fork, args[0], BACKGROUND, args, 1);
 				block_SIGCHLD();
 				// Evito que me interrumpan
 				add_job(lista, nuevo);
@@ -967,7 +986,7 @@ int main(void)
 			} else if (respawnable) {
 				// Lo agrego a la lista de jobs
 				printf("Respawnable job running at background... pid: %d comando: %s \n", pid_fork, args[0]);
-				nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args);
+				nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args, 1);
 				block_SIGCHLD();
 				// Evito que me interrumpan
 				add_job(lista, nuevo);
@@ -991,7 +1010,7 @@ int main(void)
 
 				if(status_res == SUSPENDED) {
 					// Lo agrego a la lista de jobs
-					nuevo = new_job(pid_fork, args[0], STOPPED, args);
+					nuevo = new_job(pid_fork, args[0], STOPPED, args, 1);
 					block_SIGCHLD();
 					// Evito que me interrumpan
 					add_job(lista, nuevo);
@@ -1008,7 +1027,7 @@ int main(void)
 			exit(EXIT_FAILURE);
 		} else { // hijo
 			// Redundante para garantizar su ejecucion
-			new_process_group(getpid());
+			setpgid(getpid(), getpid());
 			if(!background && !respawnable) {
 				set_terminal(getpid());
 			}

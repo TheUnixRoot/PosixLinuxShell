@@ -112,13 +112,14 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 // -----------------------------------------------------------------------
 /* devuelve puntero a un nodo con sus valores inicializados,
 devuelve NULL si no pudo realizarse la reserva de memoria*/
-job * new_job(pid_t pid, const char * command, enum job_state state, char *args[])
+job * new_job(pid_t pid, const char * command, enum job_state state, char *args[], int numProc)
 {	
 	job * aux;
 	if(args) {
 		aux=(job *) malloc(sizeof(job));
 		aux->pgid=pid;
 		aux->state=state;
+		aux->numProc = numProc;
 		aux->command=strdup(command);
 		aux->next=NULL;
 		
@@ -136,6 +137,7 @@ job * new_job(pid_t pid, const char * command, enum job_state state, char *args[
 		aux=(job *) malloc(sizeof(job));
 		aux->pgid=pid;
 		aux->state=state;
+		aux->numProc = 0;
 		aux->command=strdup(command);
 		aux->next=NULL;
 		aux -> args = NULL;
