@@ -103,7 +103,9 @@ enum status analyze_status(int status, int *info);
 void print_analyzed_status(int status, int info);		// Mio
 
 /*------------------Procedimiento para calcular el numero de argumentos-------------------------*/
+
 int longitudArgs(char ** args);
+
 /*----------------------------------------------------------------------------------------------*/
 
 

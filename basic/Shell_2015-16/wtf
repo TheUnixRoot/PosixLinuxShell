@@ -1,0 +1,9 @@
+Comentar mucho más el codigo, decir QUE HACE, no que estoy haciendo
+
+Tambien, añadir un contador de procesos al Job para poder poner los pipes en 2o plano
+usar getpgid(pid_wait) == actual -> pgid para poder ver las señales de todos los miembros del pipe
+
+CHILDREN da ganas de llorar
+/proc --------------- lista directorios numericos ---->>> pid's
+/proc/<pid>/task----- lista los threads de <pid>
+// hay que filtrar los threads hermanos y poner solo un representante

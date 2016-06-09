@@ -59,20 +59,13 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 					// la tarea que ha acabado es respawnable
 					char **temp = actual -> args;
 					pid_t pid_fork = fork();
-					if (pid_fork) { 
-						// código del padre
-
-
+					if (pid_fork) {		// código del padre
 						// Nuevo grupo para mi hijo
 						new_process_group(pid_fork);
-			
-
 						// Lo agrego a la lista de jobs
 						actual -> pgid = pid_fork;
-					} else { 
-						// hijo
+					} else {	// hijo
 						// Redundante para garantizar su ejecucion
-						
 						// creo un nuevo grupo?
 						new_process_group(getpid());
 						
@@ -108,13 +101,8 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 					printf("RESPAWNED\n");
 					fflush(NULL);
 				}
-
-
-
-
 			/******/
-			} else {
-				// SIGNALED
+			} else {	// SIGNALED
 				if(actual -> state != RESPAWNABLE) {
 					if (info == 19) {
 						actual -> state = STOPPED;
@@ -214,26 +202,34 @@ int main(void)
 
 	while (1) {		/* Program terminates normally inside get_command() after ^D is typed*/
 
-		printf("%s@%s:%s>", user, pc, cwd);	
+		printf("%s@%s:%s(Shell)>", user, pc, cwd);	
 		/* Impresion de entrada de comandos, muestra el usuario, el nombre del host y el directorio actual */
 		fflush(stdout);
 		
 		get_command(inputBuffer, MAX_LINE, args, &background, &respawnable, &historial);  /* get next command */
 		
 		if(args[0]==NULL) continue;   // if empty command
-
+		int argc = longitudArgs(args);// así almaceno el número de argumentos para cuando sea necesario
 		if (strcmp(args[0], "history") == 0) {
-			// comprueba y ejecuta el comando interno history
-			// sin argumentos, muestra el histórico de comandos de la sesion
-			// acepta argumentos:
-			// -clear para limpiar el historial
-			// -remove i para eliminar una entrada concreta
+			/* 
+			 * comprueba y ejecuta el comando interno history
+			 * sin argumentos, muestra el histórico de comandos de la sesion
+			 * acepta argumentos:
+			 * -clear:		para limpiar el historial
+			 * -remove i:	para eliminar una entrada concreta
+			 * x: 			para volver a ejecutar el comando. Es
+			 * 				un entero, perteneciente a la lista
+			 */
 			if(args[1]) {
 				// quiere una operación en concreto
 				if(strcmp(args[1], "-remove") == 0) {	// -remove i
 					int i = 0;
 					if(args[2]) {
 						i = atoi(args[2]);
+						if(i < 1 || i > length(historial)) {
+							printf("Elemento de la lista no válido: %d\n", i);
+							continue;
+						}
 						removeIelem(&historial, i);
 						continue;
 					} else {
@@ -255,13 +251,9 @@ int main(void)
 						args[i] = linea -> args[i];
 						i++;
 					}
-					args[i] = NULL;		
-
-
+					args[i] = NULL;
 					background = linea -> background;
 					respawnable = linea -> respawnable;
-					
-					printf("%s \n", args[0]);
 				}
 				// no hay continue porque así al modificar args, ejecuto el comando
 				// deseado del historial 
@@ -272,32 +264,129 @@ int main(void)
 				continue;
 			}
 		}
-		// redirección a entrada o salida de fichero
+		/*
+		 * redirección a entrada o salida de fichero
+		 * los argumentos deben estar antes del separador
+		 * < o >, segun el primero que aparezca
+		*/
+		// enod
 		int j = 0;
-		while((strcmp(args[j], ">") != 0) && (strcmp(args[j], "<") != 0) && (args[j+1] != NULL)) {
+		int posicionesRed[2] = {-1, -1};	// en [0] va posRedIn y en [1] va posRedOut
+		int numRedIn = 0, numRedOut = 0;
+		while(j < argc) {	// cuenta los elementos de redireccion
+			if(strcmp(args[j], "<") == 0) {
+				numRedIn++;
+				posicionesRed[0] = j;
+			}
+			if(strcmp(args[j], ">") == 0) {
+				numRedOut++;
+				posicionesRed[1] = j;
+			}
 			j++;
 		}
-		if(args[j+1] == NULL){	// do nothing, no hay redirección
-		} else if(strcmp(args[j],"<") == 0) {
-
-			// toca redirigir la entrada 
-			FILE *infile;
+		if(numRedOut > 1 || numRedIn > 1) {	// numero equivocado de separadores
+			printf("Error en el numero de redirecciones, introduzca máximo 1 de entrada y 1 de salida\n");
+			continue;
+		}
+		if(numRedIn < 1 && numRedOut < 1){	// do nothing, no hay redirección
+		} else {
+			// toca redirigir la entrada y/o la salida
+			FILE *infile, *outfile;
 			int fnum1,fnum2;
-			
-			printf("redirección de entrada\n");
 			
 			pid_fork = fork();
 			/*-----------padre-----------*/
 			if(pid_fork) {
 				// código del padre
 				// --->
-				struct termios conf;	// configuracion antes de lanzar job
-				int shell_terminal; 	// descriptor de fichero del terminal
+				/*
+				 * Guardo la configuración del terminal por
+				 * si en la ejecución esta se ve modificada
+				 * 
+				 */
+   				struct termios conf;
+				int shell_terminal;
 				shell_terminal = STDIN_FILENO;
-    			/* leemos la configuracion actual */
-   				tcgetattr(shell_terminal, &conf);
+    			tcgetattr(shell_terminal, &conf);
 				// <---
-			
+				/*
+				 * CODIGO REDUNDANTE PORQUE LOS ARGUMENTOS 
+				 * DEBEN SER COHERENTES PARA EL PROCESO Y
+				 * PARA EL JOB
+				 * 
+				 */
+				// ---------------------------------------------------->>>>>>>>>>>>>>>>>>>
+				/*
+				 * Hay que reordenar los argumentos
+				 * Pueden estar en cualquier parte
+				 * de la linea leida
+				 * 
+				 */
+				int a = 0;
+				while(strcmp(args[a], "<") != 0 && strcmp(args[a], ">") != 0) {
+					a++;
+				}
+				/*
+				 * a tiene el primer elemento de redireccion
+				 * así que sobreescribo el puntero args con los 
+				 * consecutivos argumentos del programa, en el orden
+				 * en el que aparecen y terminando en NULL
+				 * Machacando la información que había, por eso la 
+				 * necesidad de preguntar cual va primero y si está solo, 
+				 * para no machacar la redirección que va despues del
+				 * nombre del programa antes de repasar si incluye argumentos
+				 * 
+				 */
+
+				if(posicionesRed[0] < posicionesRed[1] || posicionesRed[1] < 0) { 
+					// entrada antes que salida o solo entrada
+					j = posicionesRed[0] + 2;
+					// posicionesRed[0] -> tiene <
+					// posicionesRed[0] + 1 tiene ficheroIn
+					// posicionesRed[0] + 2 puede tener argumentos hasta ser > o null
+					while(args[j] != NULL && strcmp(args[j], ">") != 0) {	// si entra, hay algo que es un argumento
+						args[a] = args[j];
+						j++;
+						a++;
+					}
+					if(posicionesRed[1] > 0) {
+						j = posicionesRed[1] + 2;
+						// posicionesRed[1] -> tiene >
+						// posicionesRed[1] + 1 tiene ficheroOut
+						// posicionesRed[1] + 2 puede tener argumentos hasta ser < o null
+						while(args[j] != NULL) {
+							args[a] = args[j];
+							j++;
+							a++;
+						}
+					}
+					args[a] = NULL;
+				} else {
+					// salida antes que entrada o solo salida
+					j = posicionesRed[1] + 2;
+					// posicionesRed[1] -> tiene >
+					// posicionesRed[1] + 1 tiene ficheroOut
+					// posicionesRed[1] + 2 puede tener argumentos hasta ser < o null
+					while(args[j] != NULL && strcmp(args[j], "<") != 0) {	// si entra, hay algo que es un argumento
+						args[a] = args[j];
+						j++;
+						a++;
+					}
+					if(posicionesRed[0] > 0) {
+						j = posicionesRed[0] + 2;
+						// posicionesRed[0] -> tiene <
+						// posicionesRed[0] + 1 tiene ficheroIn
+						// posicionesRed[0] + 2 puede tener argumentos hasta ser > o null
+						while(args[j] != NULL) {
+							args[a] = args[j];
+							j++;
+							a++;
+						}
+					}
+					args[a] = NULL;
+				}
+				// <<<<<<<<<<<<<<<<<<<----------------------------------------------------
+
 				// Nuevo grupo para mi hijo
 				new_process_group(pid_fork);
 			
@@ -352,111 +441,105 @@ int main(void)
 				continue;
 			/*------------hijo-----------*/
 			} else {
-				if (NULL==(infile=fopen(args[j+1],"r"))) {
-					printf("\tError: abriendo: %s\n",args[j+1]);
-					return(-1);
+				/*
+				 * Primero crea las redirecciones, según si tiene de 
+				 * entrada, de salida o ambas
+				 */
+				if(posicionesRed[0] > 0) {	// hay redirección de entrada
+					if (NULL==(infile=fopen(args[posicionesRed[0] + 1],"r"))) {
+						printf("\tError: abriendo: %s\n",args[posicionesRed[0] + 1]);
+						return(-1);
+					}
+					fnum1=fileno(infile);
+					fnum2=fileno(stdin);
+					dup2(fnum1,fnum2);
 				}
-				args[j] = NULL;
-				// termino la estructura de argumentos en el elemento de redirección, 
-				// porque los argumentos están antes seguro
-
-				fnum1=fileno(infile);
-				fnum2=fileno(stdin);
-				dup2(fnum1,fnum2);
-
-				new_process_group(getpid());
-				if(!background && !respawnable) {
-					set_terminal(getpid());
+				if(posicionesRed[1] > 0) {	// hay redirección de salida
+					if (NULL==(outfile=fopen(args[posicionesRed[1] + 1],"w"))) {
+						printf("\tError: abriendo: %s\n",args[posicionesRed[1] + 1]);
+						return(-1);
+					}
+					fnum1=fileno(outfile);
+					fnum2=fileno(stdout);
+					dup2(fnum1,fnum2);
 				}
-				restore_terminal_signals();
-				execvp(args[0], args);
-				printf("Error, ha existido algún fallo (nombre programa, permisos insuficientes, etc...)\n");
-				exit(EXIT_FAILURE);
-			}
-			// done
-		} else if(strcmp(args[j], ">") == 0) {
-			
-			// toca redirigir la salida
-			FILE *outfile;
-			int fnum1,fnum2;
-			
-			pid_fork = fork();
-			/*-----------padre-----------*/
-			if(pid_fork) {
-			// código del padre
-			// --->
-			struct termios conf;	// configuracion antes de lanzar job
-			int shell_terminal; 	// descriptor de fichero del terminal
-			shell_terminal = STDIN_FILENO;
-    		/* leemos la configuracion actual */
-   			tcgetattr(shell_terminal, &conf);
-			// <---
-			
-			// Nuevo grupo para mi hijo
-			new_process_group(pid_fork);
-			
-			if(background) {
-				// Lo agrego a la lista de jobs
-				printf("Background job running... pid: %d comando: %s \n", pid_fork, args[0]);
-				nuevo = new_job(pid_fork, args[0], BACKGROUND, args);
-				block_SIGCHLD();
-				// Evito que me interrumpan
-				add_job(lista, nuevo);
-				unblock_SIGCHLD();
-				// libero la lista
-
-			} else if (respawnable) {
-				// Lo agrego a la lista de jobs
-				printf("Respawnable job running at background... pid: %d comando: %s \n", pid_fork, args[0]);
-				nuevo = new_job(pid_fork, args[0], RESPAWNABLE, args);
-				block_SIGCHLD();
-				// Evito que me interrumpan
-				add_job(lista, nuevo);
-				unblock_SIGCHLD();
-				// libero la lista
-
-			} else {
-				// Le cedo el terminal
-				set_terminal(pid_fork);
-
-				pid_wait = waitpid(pid_fork, &status, WUNTRACED);
-				// pid_wait MUST BE EQUALS TO pid_fork
-				
-				// Le quito el terminal
-				set_terminal(getpid());
-
-	
-				status_res = analyze_status(status, &info);
-				printf("Comando %d ejecutado en foreground %s %s: \n", pid_fork, args[0], status_res?"EXITED":"SUSPENDED");
-				print_analyzed_status(status_res, info);
-
-				if(status_res == SUSPENDED) {
-					// Lo agrego a la lista de jobs
-					nuevo = new_job(pid_fork, args[0], STOPPED, args);
-					block_SIGCHLD();
-					// Evito que me interrumpan
-					add_job(lista, nuevo);
-					unblock_SIGCHLD();
-					// libero la lista
+				/*
+				 * CODIGO REDUNDANTE PORQUE LOS ARGUMENTOS 
+				 * DEBEN SER COHERENTES PARA EL PROCESO Y
+				 * PARA EL JOB
+				 * 
+				 */
+				// ---------------------------------------------------->>>>>>>>>>>>>>>>>>>
+				/*
+				 * Hay que reordenar los argumentos
+				 * Pueden estar en cualquier parte
+				 * de la linea leida
+				 * 
+				 */
+				int a = 0;
+				while(strcmp(args[a], "<") != 0 && strcmp(args[a], ">") != 0) {
+					a++;
 				}
-			}
-			// --->
-			tcsetattr(shell_terminal, TCSANOW, &conf);
-			// <---
-			continue;
-			/*------------hijo-----------*/
-			} else {
-				if (NULL==(outfile=fopen(args[j+1],"w"))) {
-					printf("\tError: abriendo: %s\n",args[j+1]);
-					return(-1);
-				}
-				args[j] = NULL;
-				// termino la estructura de argumentos en el elemento de redirección, 
-				// porque los argumentos están antes seguro
+				/*
+				 * a tiene el primer elemento de redireccion
+				 * así que sobreescribo el puntero args con los 
+				 * consecutivos argumentos del programa, en el orden
+				 * en el que aparecen y terminando en NULL
+				 * Machacando la información que había, por eso la 
+				 * necesidad de preguntar cual va primero y si está solo, 
+				 * para no machacar la redirección que va despues del
+				 * nombre del programa antes de repasar si incluye argumentos
+				 * 
+				 */
 
-				fnum1=fileno(outfile);
-				fnum2=fileno(stdout);
-				dup2(fnum1,fnum2);
+				if(posicionesRed[0] < posicionesRed[1] || posicionesRed[1] < 0) { 
+					// entrada antes que salida o solo entrada
+					j = posicionesRed[0] + 2;
+					// posicionesRed[0] -> tiene <
+					// posicionesRed[0] + 1 tiene ficheroIn
+					// posicionesRed[0] + 2 puede tener argumentos hasta ser > o null
+					while(args[j] != NULL && strcmp(args[j], ">") != 0) {	// si entra, hay algo que es un argumento
+						args[a] = args[j];
+						j++;
+						a++;
+					}
+					if(posicionesRed[1] > 0) {
+						j = posicionesRed[1] + 2;
+						// posicionesRed[1] -> tiene >
+						// posicionesRed[1] + 1 tiene ficheroOut
+						// posicionesRed[1] + 2 puede tener argumentos hasta ser < o null
+						while(args[j] != NULL) {
+							args[a] = args[j];
+							j++;
+							a++;
+						}
+					}
+					args[a] = NULL;
+				} else {
+					// salida antes que entrada o solo salida
+					j = posicionesRed[1] + 2;
+					// posicionesRed[1] -> tiene >
+					// posicionesRed[1] + 1 tiene ficheroOut
+					// posicionesRed[1] + 2 puede tener argumentos hasta ser < o null
+					while(args[j] != NULL && strcmp(args[j], "<") != 0) {	// si entra, hay algo que es un argumento
+						args[a] = args[j];
+						j++;
+						a++;
+					}
+					if(posicionesRed[0] > 0) {
+						j = posicionesRed[0] + 2;
+						// posicionesRed[0] -> tiene <
+						// posicionesRed[0] + 1 tiene ficheroIn
+						// posicionesRed[0] + 2 puede tener argumentos hasta ser > o null
+						while(args[j] != NULL) {
+							args[a] = args[j];
+							j++;
+							a++;
+						}
+					}
+					args[a] = NULL;
+				}
+				// <<<<<<<<<<<<<<<<<<<----------------------------------------------------
 
 				new_process_group(getpid());
 				if(!background && !respawnable) {
@@ -469,6 +552,8 @@ int main(void)
 			}
 			// done
 		}
+
+		// done
 		if (strcmp(args[0], "children") == 0) {
 			printf("PID\tCOMMAND\t#CHILDREN\t#THREADS\n");
 			// TODO
@@ -482,7 +567,6 @@ int main(void)
 		 */
 		// enod
 		j = 0;
-		int argc = longitudArgs(args);
 		int descf[2], anterior[2];
 		int numPipes = 0;
 		while(j < argc) {	// cuenta los pipes
@@ -619,7 +703,9 @@ int main(void)
 			elem *theOne;		// usa el elemento de la lista de procesos
 			int pgid = pid_fork;
 			int when = atoi(args[1]);
+			fflush(NULL);
 			if(when < 0){
+				// COMPROBAR EL ATOI TIENE QUE SER NUMEROS
 				printf("Error, el argumento de time-out no es un numero valido\n");
 				continue;
 			}
@@ -918,7 +1004,7 @@ int main(void)
 			tcsetattr(shell_terminal, TCSANOW, &conf);
 			// <---
 			continue;
-		} else if(pid_fork < 0) {
+		} else if(pid_fork < 0) { // error en fork
 			printf("Error al crear el proceso (memoria insuficiente, límite de procesos, etc...)\n");
 			exit(EXIT_FAILURE);
 		} else { // hijo
