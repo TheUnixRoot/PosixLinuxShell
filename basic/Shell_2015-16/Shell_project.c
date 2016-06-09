@@ -209,7 +209,6 @@ int main(void)
 		get_command(inputBuffer, MAX_LINE, args, &background, &respawnable, &historial);  /* get next command */
 		
 		if(args[0]==NULL) continue;   // if empty command
-		int argc = longitudArgs(args);// así almaceno el número de argumentos para cuando sea necesario
 		if (strcmp(args[0], "history") == 0) {
 			/* 
 			 * comprueba y ejecuta el comando interno history
@@ -219,6 +218,10 @@ int main(void)
 			 * -remove i:	para eliminar una entrada concreta
 			 * x: 			para volver a ejecutar el comando. Es
 			 * 				un entero, perteneciente a la lista
+			 * --------------------------------------------------------------
+			 * si se quiere ejecutar history x, donde x es un comando
+			 * de tipo history, devuelve un error
+			 * --------------------------------------------------------------
 			 */
 			if(args[1]) {
 				// quiere una operación en concreto
@@ -254,6 +257,11 @@ int main(void)
 					args[i] = NULL;
 					background = linea -> background;
 					respawnable = linea -> respawnable;
+					
+					if(strcmp(args[0], "history") == 0) {	// el comando buscado es tipo history
+						printf("Error, no se puede relanzar un comando que contiene un history\n");
+						continue;
+					}
 				}
 				// no hay continue porque así al modificar args, ejecuto el comando
 				// deseado del historial 
@@ -264,6 +272,7 @@ int main(void)
 				continue;
 			}
 		}
+		int argc = longitudArgs(args);// así almaceno el número de argumentos para cuando sea necesario
 		/*
 		 * redirección a entrada o salida de fichero
 		 * los argumentos deben estar antes del separador
@@ -289,8 +298,7 @@ int main(void)
 			continue;
 		}
 		if(numRedIn < 1 && numRedOut < 1){	// do nothing, no hay redirección
-		} else {
-			// toca redirigir la entrada y/o la salida
+		} else {							// toca redirigir la entrada y/o la salida
 			FILE *infile, *outfile;
 			int fnum1,fnum2;
 			
@@ -311,9 +319,9 @@ int main(void)
 				// <---
 				/*
 				 * CODIGO REDUNDANTE PORQUE LOS ARGUMENTOS 
-				 * DEBEN SER COHERENTES PARA EL PROCESO Y
-				 * PARA EL JOB
-				 * 
+				 * DEBEN SER COHERENTES PARA EL PROCESO
+				 * EJECUTADO Y PARA EL JOB DE LA LISTA
+				 *  
 				 */
 				// ---------------------------------------------------->>>>>>>>>>>>>>>>>>>
 				/*
@@ -465,8 +473,8 @@ int main(void)
 				}
 				/*
 				 * CODIGO REDUNDANTE PORQUE LOS ARGUMENTOS 
-				 * DEBEN SER COHERENTES PARA EL PROCESO Y
-				 * PARA EL JOB
+				 * DEBEN SER COHERENTES PARA EL PROCESO
+				 * EJECUTADO Y PARA EL JOB DE LA LISTA
 				 * 
 				 */
 				// ---------------------------------------------------->>>>>>>>>>>>>>>>>>>
@@ -552,19 +560,12 @@ int main(void)
 			}
 			// done
 		}
-
 		// done
 		if (strcmp(args[0], "children") == 0) {
 			printf("PID\tCOMMAND\t#CHILDREN\t#THREADS\n");
 			// TODO
 			continue;
 		}
-		/*
-		 * MIS PIPES
-		 * NO PERMITEN
-		 * EJECUCION EN
-		 * BACKGROUD
-		 */
 		// enod
 		j = 0;
 		int descf[2], anterior[2];
@@ -575,8 +576,6 @@ int main(void)
 			j++;
 		}
 		if(numPipes > 0) {	// parece que hay un pipe
-				
-			
 			int posicionesPipes[numPipes];
 			j = 0;
 			int k = 0;

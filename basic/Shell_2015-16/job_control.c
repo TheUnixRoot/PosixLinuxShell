@@ -355,6 +355,10 @@ void showHistory(history lista) {
 			printf("%s ", aux[j]);
 			j++;
 		}
+		if(lista -> background)
+			printf("&");
+		if (lista -> respawnable)
+			printf("#");
 		printf("\n");
 		lista = lista -> prev;
 		i++;
