@@ -120,6 +120,9 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 							delete_job(lista, actual);
 							i--;
 						}
+					} else if(info == 13) {	// SIGPIPE
+							delete_job(lista, actual);
+							i--;
 					}
 				} else {
 					if (info == 19) {
