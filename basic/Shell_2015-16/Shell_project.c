@@ -172,8 +172,7 @@ void my_sigchld(int signum) {	// manejador de SIGCHLD
 	unblock_SIGCHLD();
 }
 /*----------------------Procedimiento para el thread time-out----------------------------------*/
-static void* killer(void *arg)
-{
+static void* killer(void *arg) {
   elem *payload = arg;
 
   sleep(payload->time);
@@ -212,7 +211,7 @@ int main(void)
 	gethostname(pc,40);
 	getcwd(cwd, 100);
 
-	char * oldpwd = getenv("OLDPWD");
+	char * oldpwd;
 	char * home = getenv("HOME");
 	/* Variables iniciales del entorno, utilizadas para el comando interno cd */
 
@@ -289,12 +288,42 @@ int main(void)
 				continue;
 			}
 		}
-		int argc = longitudArgs(args);// así almaceno el número de argumentos para cuando sea necesario
+		int argc = longitudArgs(args);
+		// así almaceno el número de argumentos para cuando sea necesario
 		/*
-		 * redirección a entrada o salida de fichero
-		 * los argumentos deben estar antes del separador
-		 * < o >, segun el primero que aparezca
-		*/
+		 * Redireccion de la entrada y/o de la salida estandar
+		 * de un proceso a un fichero, acepta los esquemas de 
+		 * funcionamiento siguientes:
+		 * 
+		 * programa < entrada
+		 * programa > salida
+		 * 
+		 * programa argumento(s) < entrada
+		 * programa < entrada argumento(s)
+		 * programa argumento(s) < entrada argumento(s)
+		 * 
+		 * programa argumento(s) > salida
+		 * programa > salida argumento(s)
+		 * programa argumento(s) > salida argumento(s)
+		 *
+		 * programa < entrada > salida
+		 * programa < entrada > salida argumento(s)
+		 * programa < entrada argumento(s) > salida
+		 * programa < entrada argumento(s) > salida argumento(s)
+		 * programa argumento(s) < entrada > salida
+		 * programa argumento(s) < entrada > salida argumento(s)
+		 * programa argumento(s) < entrada argumento(s) > salida
+		 * programa argumento(s) < entrada argumento(s) > salida argumento(s)
+		 * 
+		 * programa > salida < entrada
+		 * programa > salida < entrada argumento(s)
+		 * programa > salida argumento(s) < entrada
+		 * programa > salida argumento(s) < entrada argumento(s)
+		 * programa argumento(s) > salida < entrada
+		 * programa argumento(s) > salida < entrada argumento(s)
+		 * programa argumento(s) > salida argumento(s) < entrada
+		 * programa argumento(s) > salida argumento(s) < entrada argumento(s)
+		 */
 		// enod
 		int j = 0;
 		int posicionesRed[2] = {-1, -1};	// en [0] va posRedIn y en [1] va posRedOut
@@ -583,6 +612,29 @@ int main(void)
 			// TODO
 			continue;
 		}
+		/*
+		 * Implementación de pipes en la entrada de argumentos
+		 * soporta multiples pipes para concatenar procesos en 
+		 * foreground y en background, los crea de forma secuencial,
+		 * luego los añade al mismo grupo de procesos, uno a uno,
+		 * éste grupo tiene el pgid del ultimo hijo creado.
+		 * Asimismo, en el caso del foreground, realiza un wait 
+		 * bloqueante de cada hijo, comenzando por el ultimo, y 
+		 * recorriendolos desde el primero hasta el penultimo
+		 * al ser en foreground, puede ser bloqueante, pues hasta
+		 * que no finalizan todos, no recupero el terminal.
+		 * En el caso del background, al ser señales asincronas, 
+		 * cuando llega un sigchld, realizo un wait sobre el grupo
+		 * obteniendo el pid del miembro al que le ha ocurrido algo 
+		 * y decremento el contador de procesos en el job asociado 
+		 * al grupo.
+		 *
+		 * Realiza control de errores en el sentido de:
+		 * 	Pipes en la primera o en la ultima poscion del array
+		 * de argumentos.
+		 *  Pipes consecutivos en la linea de argumentos
+		 *  
+		 */
 		// enod
 		j = 0;
 		int descf[2], anterior[2];
@@ -603,20 +655,24 @@ int main(void)
 			}
 			// posicionesPipes tiene un array con el numPipes y su ubicacion
 			k = 0; j = 0;
-			int out = 0;
+			int out = 0, ant = -1;
 			while(k < numPipes && !out) {	// valido las posiciones de los pipes
 				j = posicionesPipes[k];
-				if(j < 1 || j == argc) {
+				if(j < 1 || j == argc) {	// primera o ultima posiciones
 					printf("Error al introducir los pipes, fallo de posiciones %d\n", j);
 					out = 1;
 				}
+				if(j == ant+1) {			// dos consecutivos
+					printf("Error al introducir al menos 2 pipes consecutivos\n");
+					out = 1;
+				}
+				ant = j;
 				k++;
 			}
 			if(out) {	// error en pipes, reiniciar bucle
 				continue;
 			} else {	// tenemos pipes, vamos a ponernos a trabajar
-				// TERMIOS WHEREEEEE
-				// reclio la variable out como inicio de los argumentos del programa
+				// reciclo la variable out como inicio de los argumentos del programa
 				out = 0;
 				for (k = 0; k < numPipes; ++k) {
 					pipe(descf);
@@ -702,14 +758,33 @@ int main(void)
 					// wait del ultimo hijo
 					pid_wait = waitpid(pid_fork, &status, WUNTRACED);
 					// pid_wait MUST BE EQUALS TO pid_fork
-					if(pid_wait == pid_fork) {	// ha muerto el ultimo, 
-						// tengo que hacer wait de todo el array de hijos
+					status_res = analyze_status(status, &info);
+					if(status_res == EXITED)  {
 						out = 0;
 						j = 0;
-						while(j < numPipes) {
+						while(j < numPipes && info != 13) {	
+							// hago un wait sobre el grupo y voy sacando hijos hasta numPipes
 							waitpid(posicionesPipes[j], &status, WUNTRACED);
+							status_res = analyze_status(status, &info);
 							j++;
-						}		
+						}
+						if(info == 13) { // ha muerto uno intermedio, los mato todos
+							killpg(pid_wait, SIGKILL);
+							out = 0;
+							j = 0;
+							waitpid(pid_fork, &status, WUNTRACED);
+							while(j < numPipes) {	
+								// hago un wait sobre el grupo y voy sacando hijos hasta numPipes
+								waitpid(posicionesPipes[j], &status, WUNTRACED);
+								j++;
+							}
+						}
+					} else {	// suspended, a la lista
+						nuevo = new_job(pid_fork, args[0], STOPPED, args, numPipes+1);
+						block_SIGCHLD();
+						// Evito que me interrumpan
+						add_job(lista, nuevo);
+						unblock_SIGCHLD();
 					}
 					// Le quito el terminal
 					set_terminal(getpid());
@@ -724,13 +799,21 @@ int main(void)
 			continue;
 		}
 		if (strcmp(args[0], "time-out") == 0) {
-			 /* comando interno para lanzar una tarea en modo time-out
+			/* 
+			 * Comando interno para lanzar una tarea en modo time-out
 			 * no controla el lanzamiento de una tarea respawnable en time-out
 			 * debido a la naturaleza del respawnable, es absurdo, con lo que el 
 			 * time-out prevalece, eliminando la cualidad respawnable
 			 * args[1] tiene los segundos de vida del job
 			 * args[2] tiene el comando
 			 * args[3-inf] tienen los parametros
+			 * 
+			 * Realiza control de errores para evitar tiempo no positvo, con 
+			 * argumentos negativos, no se ejecuta y con caracteres no numericos
+			 * tampoco.
+			 * 
+			 * Permite lanzamientos tanto en foreground como en background
+			 *
 			 */
 			pthread_t thid;
 			elem *theOne;		// usa el elemento de la lista de procesos
@@ -822,11 +905,34 @@ int main(void)
 			continue;
 		}
 		if (strcmp(args[0], "cd") == 0) {
+			/*
+			 * Implementacion del comando interno cd.
+			 * Permite los siguientes usos:
+			 * cd <sin argumentos>: cambia el directorio
+			 *						de trabajo actual al 
+			 *						home del usuario, 
+			 *						definido en la variable
+			 *						de entorno HOME
+			 * cd -				  : cambia al directorio 
+			 *						anterior, definido 
+			 *						en la variable de entorno
+			 *						OLDPWD
+			 * cd <path>		  : cambia al directorio indicado
+			 *						en el 2o argumento,
+			 *						interpretado como path
+			 *						al mismo(absoluto o relativo)
+			 *
+			 * Realiza control de errores, mediante el
+			 * resultado de la llamada al sistema chdir
+			 * en caso de error informa por pantalla
+			 * No expresa mayor detalle sobre el mismo
+			 */
 			int e;
+			oldpwd = (char*)malloc(sizeof(char)*100);	// reserva memoria
 			if(args[1]) {	// path absoluto
 				if(strcmp(args[1], "-") == 0) {
-					chdir(oldpwd);
-					strcpy(oldpwd, cwd);
+					chdir(getenv("OLDPWD"));
+					strcpy(oldpwd, cwd);	
 				} else {
 					getcwd(oldpwd, 100);
 					e = chdir(args[1]);
@@ -838,9 +944,10 @@ int main(void)
 			if(e) 
 				printf("Dirección errónea, inexistente o faltan permisos de acceso\n");
 			else {
+				setenv("OLDPWD", oldpwd, 1);	// sets OLDPWD variable with overwritting, using a copy
 				getcwd(cwd, 100);
-				setenv("OLDPWD", oldpwd, 1);	// sets OLDPWD variable with overwritting
 			}
+			free(oldpwd);
 			continue;
 		}
 		if (strcmp(args[0], "jobs") == 0) {	// muestra la lista de tareas
@@ -855,8 +962,23 @@ int main(void)
 			exit(0);
 			continue;
 		}
-		if (strcmp(args[0], "fg") == 0) {
-			// quiero lanzar en foreground una tarea, bien suspendida bien en background
+		if (strcmp(args[0], "fg") == 0) { // quiero lanzar en foreground una tarea, bien suspendida bien en background
+			/*
+			 * Comando interno para poner en foreground un
+			 * job de la lista de background y suspended
+			 * Admite argumentos numericos, entre 1 y el 
+			 * tamaño de la lista de jobs.
+			 * Controla además que la lista no se encuentre vacía
+			 * 
+			 * La implementacion se realiza obteniendo el argumento,
+			 * si lo hubiere y posteriormente, entregando el 
+			 * terminal al job de la lista, dicho job no se 
+			 * elimina de la lista hasta que finaliza la tarea
+			 * por motivos de sencillez a la hora de reintroducirlo
+			 * si la tarea volviera a suspenderse.
+			 * En el caso de suspenderse, se cambia el estado del job
+			 * que ya estaba en lista a suspended
+			 */
 			if(empty_list(lista)) {
 				printf("No existen tareas\n");
 			} else {
