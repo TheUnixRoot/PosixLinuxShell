@@ -817,14 +817,15 @@ int main(void)
 			 */
 			pthread_t thid;
 			elem *theOne;		// usa el elemento de la lista de procesos
-			int pgid = pid_fork;
 			int when = atoi(args[1]);
 			fflush(NULL);
 			if(when < 1){	// Controla cuando introduzco numeros negativos y caracteres (dan 0 en atoi)
 				printf("Error, el argumento de time-out no es un numero valido\n");
 				continue;
 			}
+			printf("%d\n", when);
 			pid_fork = fork();
+			int pgid = pid_fork;
 			if (pid_fork) { 
 				
 				// Incluir info del temporizador en la estructura de tipo elem
