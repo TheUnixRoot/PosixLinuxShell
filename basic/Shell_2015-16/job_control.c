@@ -112,7 +112,7 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 // -----------------------------------------------------------------------
 /* devuelve puntero a un nodo con sus valores inicializados,
 devuelve NULL si no pudo realizarse la reserva de memoria*/
-job * new_job(pid_t pid, const char * command, enum job_state state, char *args[], int numProc, struct termios conf)
+job * new_job(pid_t pid, const char * command, enum job_state state, char *args[], int numProc)
 {	
 	job * aux;
 	if(args) {
@@ -122,7 +122,6 @@ job * new_job(pid_t pid, const char * command, enum job_state state, char *args[
 		aux -> numProc = numProc;
 		aux -> command=strdup(command);
 		aux -> next=NULL;
-		aux -> config = conf;
 		aux -> args = (char**) malloc(sizeof(char*)*128);
 
 		char ** doblePuntero = aux -> args;
@@ -141,7 +140,6 @@ job * new_job(pid_t pid, const char * command, enum job_state state, char *args[
 		aux -> command=strdup(command);
 		aux -> next=NULL;
 		aux -> args = NULL;
-		aux -> config = conf;
 	}
 	return aux;
 }

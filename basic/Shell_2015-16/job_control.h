@@ -50,7 +50,6 @@ typedef struct job_
 {
 	pid_t pgid; /* group id = process lider id */
 	int numProc;
-	struct termios config;
 	char * command; /* program name */
 	enum job_state state;
 	struct job_ *next; /* next job in the list */
@@ -112,7 +111,7 @@ int length(history lista);
 
 void get_command(char inputBuffer[], int size, char *args[],int *background, int *respawnable, history *historial);
 
-job * new_job(pid_t pid, const char * command, enum job_state state, char **args, int numProc, struct termios conf);
+job * new_job(pid_t pid, const char * command, enum job_state state, char **args, int numProc);
 
 void add_job (job * list, job * item);
 
