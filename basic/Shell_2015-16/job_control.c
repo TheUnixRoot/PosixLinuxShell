@@ -112,17 +112,17 @@ void get_command(char inputBuffer[], int size, char *args[],int *background, int
 // -----------------------------------------------------------------------
 /* devuelve puntero a un nodo con sus valores inicializados,
 devuelve NULL si no pudo realizarse la reserva de memoria*/
-job * new_job(pid_t pid, const char * command, enum job_state state, char *args[], int numProc)
+job * new_job(pid_t pid, const char * command, enum job_state state, char *args[], int numProc, struct termios conf)
 {	
 	job * aux;
 	if(args) {
 		aux=(job *) malloc(sizeof(job));
-		aux->pgid=pid;
-		aux->state=state;
-		aux->numProc = numProc;
-		aux->command=strdup(command);
-		aux->next=NULL;
-		
+		aux -> pgid=pid;
+		aux -> state=state;
+		aux -> numProc = numProc;
+		aux -> command=strdup(command);
+		aux -> next=NULL;
+		aux -> config = conf;
 		aux -> args = (char**) malloc(sizeof(char*)*128);
 
 		char ** doblePuntero = aux -> args;
@@ -135,12 +135,13 @@ job * new_job(pid_t pid, const char * command, enum job_state state, char *args[
 		doblePuntero[i] = NULL;
 	} else {
 		aux=(job *) malloc(sizeof(job));
-		aux->pgid=pid;
-		aux->state=state;
-		aux->numProc = 0;
-		aux->command=strdup(command);
-		aux->next=NULL;
+		aux -> pgid=pid;
+		aux -> state=state;
+		aux -> numProc = 0;
+		aux -> command=strdup(command);
+		aux -> next=NULL;
 		aux -> args = NULL;
+		aux -> config = conf;
 	}
 	return aux;
 }
@@ -415,3 +416,73 @@ int longitudArgs(char ** args) {
 	return i;
 }
 /*----------------------------------------------------------------------------------------------*/
+
+// ------------ Function to show output of children command --------------
+
+void showingChildren(){
+	DIR *procDirectory;
+	if(procDirectory = opendir("/proc")) {
+	} else {
+		printf("Error al abrir el directorio\n");
+		return ;
+	}
+	struct dirent *procStruct;
+	procStruct = readdir(procDirectory);
+	while(procStruct != NULL) {
+		pid_t pid = (pid_t)atoi(procStruct -> d_name);
+		if (pid > 0) {
+			// TENGO TODOS LOS PROCESOS DEL SISTEMA, 
+			// UNO A UNO
+			char *cadenaTemporal = (char*)malloc(sizeof(char)*100);
+			DIR *processDirectory;
+			sprintf(cadenaTemporal,"/proc/%d/task", pid);
+			if(processDirectory = opendir(cadenaTemporal)) {
+			} else {
+				printf("Error al abrir el directorio\n");
+				return ;
+			}
+			struct dirent *processStruct;
+			processStruct = readdir(processDirectory);
+			int i = 0;
+			while(processStruct != NULL) {
+				// printf("%s\n", processStruct -> d_name);
+				if(atoi(processStruct -> d_name)) {
+					i++;
+				}
+				processStruct = readdir(processDirectory);
+			}
+			
+			closedir(processDirectory);
+			FILE *processChild;
+			sprintf(cadenaTemporal,"/proc/%d/task/%d/children", pid, pid);
+
+			if(processChild = fopen(cadenaTemporal, "r")) {
+			} else {
+				printf("Error al abrir el fichero\n");
+				return;
+			}
+			int nchild = 0;
+			int dum;
+			while(fscanf(processChild, "%d ", &dum) != EOF) {
+				nchild++;
+			}
+
+			fclose(processChild);
+
+			sprintf(cadenaTemporal,"/proc/%d/task/%d/comm", pid, pid);
+			if(processChild = fopen(cadenaTemporal, "r")) {
+			} else {
+				printf("Error al abrir el fichero\n");
+				return;
+			}
+			fscanf(processChild, "%s", cadenaTemporal);
+			printf("%d\t%d\t\t%d\t\t%s\n", pid, nchild, i, cadenaTemporal);
+			// fclose(processStat);
+			free(cadenaTemporal);
+		}
+		procStruct = readdir(procDirectory);
+	}
+	closedir(procDirectory);
+}
+
+// -----------------------------------------------------------------------

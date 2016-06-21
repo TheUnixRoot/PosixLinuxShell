@@ -7,3 +7,199 @@ CHILDREN da ganas de llorar
 /proc --------------- lista directorios numericos ---->>> pid's
 /proc/<pid>/task----- lista los threads de <pid>
 // hay que filtrar los threads hermanos y poner solo un representante
+
+/**
+ * UNIX Shell Project
+ * 
+ * Sistemas Operativos
+ * Grados I. Informatica, Computadores & Software
+ * Dept. Arquitectura de Computadores - UMA
+ * 
+ * Some (very few) code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
+ * 
+ * To compile and run the program:
+ *    $ gcc Shell_project.c job_control.c -o shell -pthread
+ *    $ ./shell          
+ * 	(then type ^D to exit program, also writting exit)
+ * 
+ * EXTENDED, MODIFIED AND DEVELOPED BY Juan Pedro Domínguez Berdún from University of Malaga
+ * on 2016, to final practice on Sistemas Operativos subject.
+ * 
+ * Apart of the basic shell with full job control (launch jobs at background of background)
+ * I have implemented some improvements:
+ * 	- History command:
+ *		history: shows sesion commands in a list
+ *		history -remove <elem>: remove from history the <elem> entry
+ *		history -clear: sets empty the history list
+ *		history <elem>: runs again the <elem> entry
+ *	- Time-out command:
+ *		time-out <time> <command>: launchs <command> with <time> time to live, after that,
+ *								   the procces is killed.
+ *	- Input / Output redirecction command:
+ *		<command> < inputFile: redirects standar input to File inputFile.
+ *		<command> > outputFile: redirects standar output to File outputFile.
+ *		<command> </> in/outputFile >/< out/inputFile: redirects standar input and output to
+ * 													   the respective file.
+ *		Admits arguments anywhere, except neither before command nor between "<"/">" FILE:
+ * 		Example of what NOT admits: 
+ *				ls > -l outfile.txt (the same to the rest permutations with < command) 
+ * 	- Respawnable state:
+ *		<command> #: launchs a process in a special state where does not die or stop, 
+ *					 until it state changes to background with bg command of to foreground fg.
+ * 	- Termios improvement:
+ *		Save and restore the terminal configuration to each job, if it changes it or not,
+ *		the shell has its own configuration.
+ *	- Commands in a pipeline:
+ *		<command1> | ... | <commandN>: concatenate standar output to the standar input of
+ *									   the following command, excepts the first input and
+ *									   the last output.
+ *									   Should allow background launching and foreground, 
+ *									   also swapping between theese states.
+ * 
+**/
+// así almaceno el número de argumentos para cuando sea necesario
+		/*
+		 * Redireccion de la entrada y/o de la salida estandar
+		 * de un proceso a un fichero, acepta los esquemas de 
+		 * funcionamiento siguientes:
+		 * 
+		 * programa < entrada
+		 * programa > salida
+		 * 
+		 * programa argumento(s) < entrada
+		 * programa < entrada argumento(s)
+		 * programa argumento(s) < entrada argumento(s)
+		 * 
+		 * programa argumento(s) > salida
+		 * programa > salida argumento(s)
+		 * programa argumento(s) > salida argumento(s)
+		 *
+		 * programa < entrada > salida
+		 * programa < entrada > salida argumento(s)
+		 * programa < entrada argumento(s) > salida
+		 * programa < entrada argumento(s) > salida argumento(s)
+		 * programa argumento(s) < entrada > salida
+		 * programa argumento(s) < entrada > salida argumento(s)
+		 * programa argumento(s) < entrada argumento(s) > salida
+		 * programa argumento(s) < entrada argumento(s) > salida argumento(s)
+		 * 
+		 * programa > salida < entrada
+		 * programa > salida < entrada argumento(s)
+		 * programa > salida argumento(s) < entrada
+		 * programa > salida argumento(s) < entrada argumento(s)
+		 * programa argumento(s) > salida < entrada
+		 * programa argumento(s) > salida < entrada argumento(s)
+		 * programa argumento(s) > salida argumento(s) < entrada
+		 * programa argumento(s) > salida argumento(s) < entrada argumento(s)
+		 */
+		/*
+		 * Implementación de pipes en la entrada de argumentos
+		 * soporta multiples pipes para concatenar procesos en 
+		 * foreground y en background, los crea de forma secuencial,
+		 * luego los añade al mismo grupo de procesos, uno a uno,
+		 * éste grupo tiene el pgid del ultimo hijo creado.
+		 * Asimismo, en el caso del foreground, realiza un wait 
+		 * bloqueante de cada hijo, comenzando por el ultimo, y 
+		 * recorriendolos desde el primero hasta el penultimo
+		 * al ser en foreground, puede ser bloqueante, pues hasta
+		 * que no finalizan todos, no recupero el terminal.
+		 * En el caso del background, al ser señales asincronas, 
+		 * cuando llega un sigchld, realizo un wait sobre el grupo
+		 * obteniendo el pid del miembro al que le ha ocurrido algo 
+		 * y decremento el contador de procesos en el job asociado 
+		 * al grupo.
+		 *
+		 * Realiza control de errores en el sentido de:
+		 * 	Pipes en la primera o en la ultima poscion del array
+		 * de argumentos.
+		 *  Pipes consecutivos en la linea de argumentos
+		 *  
+		 */
+		/*
+		 * Implementacion del comando interno cd.
+		 * Permite los siguientes usos:
+		 * cd <sin argumentos>: cambia el directorio
+		 *						de trabajo actual al 
+		 *						home del usuario, 
+		 *						definido en la variable
+		 *						de entorno HOME
+		 * cd -				  : cambia al directorio 
+		 *						anterior, definido 
+		 *						en la variable de entorno
+		 *						OLDPWD
+		 * cd <path>		  : cambia al directorio indicado
+		 *						en el 2o argumento,
+		 *						interpretado como path
+		 *						al mismo(absoluto o relativo)
+		 *
+		 * Realiza control de errores, mediante el
+		 * resultado de la llamada al sistema chdir
+		 * en caso de error informa por pantalla
+		 * No expresa mayor detalle sobre el mismo
+		 */
+		/*
+		 * Comando interno para poner en foreground un
+		 * job de la lista de background y suspended
+		 * Admite argumentos numericos, entre 1 y el 
+		 * tamaño de la lista de jobs.
+		 * Controla además que la lista no se encuentre vacía
+		 * 
+		 * La implementacion se realiza obteniendo el argumento,
+		 * si lo hubiere y posteriormente, entregando el 
+		 * terminal al job de la lista, dicho job no se 
+		 * elimina de la lista hasta que finaliza la tarea
+		 * por motivos de sencillez a la hora de reintroducirlo
+		 * si la tarea volviera a suspenderse.
+		 * En el caso de suspenderse, se cambia el estado del job
+		 * que ya estaba en lista a suspended
+		 */
+		/*
+		 * Comando interno para poner en background un
+		 * job de la lista de background y suspended
+		 * Admite argumentos positivos entre 1 y el tamaño
+		 * de la lista de jobs.
+		 * Controla además que la lista no sea vacía
+		 *
+		 * La implementación se realiza obteniendo el argumento
+		 * y si lo hubiera: Busca el job en la lista y lo reanuda, 
+		 * ya que si está en la lista, o está en background o 
+		 * suspended, informa si la tarea ya se encontraba en 
+		 * background.
+		 * En caso de que no hubiera argumentos: Busca en la lista
+		 * el primer job en estado suspended y lo reanuda. Si no hubiese,
+		 * informa y no hace ningún cambio en la lista.
+		 */
+		/*
+		 * Lanza un proceso y controla si es en background, 
+		 * respawnable o en foreground.
+		 * 
+		 * Podría decirse que es la ejecución normal y sencilla
+		 * de un proceso.
+		 */
+
+
+
+// --->
+struct termios conf;	// configuracion antes de lanzar job
+struct termios jobConf;	// configuracion del job
+int shell_terminal; 	// descriptor de fichero del terminal
+shell_terminal = STDIN_FILENO;
+/* leemos la configuracion actual */
+tcgetattr(shell_terminal, &conf);
+tcgetattr(shell_terminal, &jobConf);
+// <---
+
+nuevo = new_job(pid_fork, args[0], BACKGROUND, args, 1, jobConf);
+
+pid_wait = waitpid(pid_fork, &status, WUNTRACED);
+// pid_wait MUST BE EQUALS TO pid_fork
+
+// Le quito el terminal
+set_terminal(getpid());
+tcgetattr(shell_terminal, &jobConf);
+
+
+
+// --->
+tcsetattr(shell_terminal, TCSANOW, &conf);
+// <---				

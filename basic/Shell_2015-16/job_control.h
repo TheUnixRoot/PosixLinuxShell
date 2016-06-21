@@ -21,6 +21,8 @@ Some code adapted from "Fundamentos de Sistemas Operativos", Silberschatz et al.
 #include <sys/wait.h>
 #include <time.h>
 #include <errno.h>
+#include <dirent.h>
+
 
 
 // ----------------------------------------------------------------------
@@ -48,6 +50,7 @@ typedef struct job_
 {
 	pid_t pgid; /* group id = process lider id */
 	int numProc;
+	struct termios config;
 	char * command; /* program name */
 	enum job_state state;
 	struct job_ *next; /* next job in the list */
@@ -64,6 +67,26 @@ struct history_
 	int respawnable;
 	char** args; // args[0] = 
 };
+
+// ------------ Function to show output of children command --------------
+/*
+ * Accede al fichero virtual /proc, itera por todos los directorios numericos, 
+ * por sus subdirectorios /proc/<pid>/task para obtener los threads, por su 
+ * propio subdirectorio dentro de task (/proc/<pid>/task/<pid>) para obtener 
+ * los ficheros /proc/<pid>/task/<pid>/children (cuento el numero de entradas,
+ * los hijos) y /proc/<pid>/task/<pid>/comm (obtengo el nombre del comando)
+ *
+ * Debido a la complejidad de los manuales y el sistema dentro del fichero /proc
+ * esta parte ha sido hecha muy deprisa y el codigo es muy complejo, pero como
+ * no ha entrado en el plazo, no he dedicado todo lo que debería a organizar el 
+ * código. 
+ */
+	
+void showingChildren();
+
+// -----------------------------------------------------------------------
+
+
 
 // -----------------------------------------------------------------------
 //      PUBLIC FUNCTIONS
@@ -89,7 +112,7 @@ int length(history lista);
 
 void get_command(char inputBuffer[], int size, char *args[],int *background, int *respawnable, history *historial);
 
-job * new_job(pid_t pid, const char * command, enum job_state state, char **args, int numProc);
+job * new_job(pid_t pid, const char * command, enum job_state state, char **args, int numProc, struct termios conf);
 
 void add_job (job * list, job * item);
 

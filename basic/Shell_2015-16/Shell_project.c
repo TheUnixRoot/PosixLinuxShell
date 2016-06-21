@@ -609,7 +609,7 @@ int main(void)
 		// done
 		if (strcmp(args[0], "children") == 0) {
 			printf("PID\tCOMMAND\t#CHILDREN\t#THREADS\n");
-			// TODO
+			showingChildren();
 			continue;
 		}
 		/*
